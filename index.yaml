@@ -1,0 +1,7 @@
+indexes:
+
+- kind: Bin
+  properties:
+  - name: api_token
+  - name: date_created
+    direction: desc
