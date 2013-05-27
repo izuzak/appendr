@@ -291,8 +291,17 @@ bin_data_supported_mime_types_post = ['application/x-www-form-urlencoded', 'appl
 #
 
 class BinHandler(webapp2.RequestHandler):
+    def options(self):
+        self.response.headers.add_header("Access-Control-Allow-Origin", "*")
+        self.response.headers.add_header("Access-Control-Allow-Methods", "GET, POST")
+        self.response.headers.add_header("Access-Control-Allow-Headers", "Content-Type")
+        self.response.headers.add_header("Access-Control-Max-Age", str(60*60*24*30))
+        self.response.set_status(200)
+
     def get(self):
         try:
+            self.response.headers.add_header("Access-Control-Allow-Origin", "*")
+
             accept_header = mimeparse.best_match(bins_supported_mime_types, self.request.headers['Accept'])
 
             if not accept_header:
@@ -314,6 +323,9 @@ class BinHandler(webapp2.RequestHandler):
 
     def post(self):
         try:
+            self.response.headers.add_header("Access-Control-Allow-Origin", "*")
+            self.response.headers.add_header("Access-Control-Expose-Headers", "Link")
+
             content_type = self.request.content_type
 
             if content_type not in bin_supported_mime_types_post:
@@ -334,8 +346,17 @@ class BinHandler(webapp2.RequestHandler):
             self.response.out.write(e.msg)
 
 class DataHandler(webapp2.RequestHandler):
+    def options(self, bin_key):
+        self.response.headers.add_header("Access-Control-Allow-Origin", "*")
+        self.response.headers.add_header("Access-Control-Allow-Methods", "POST")
+        self.response.headers.add_header("Access-Control-Allow-Headers", "Content-Type")
+        self.response.headers.add_header("Access-Control-Max-Age", str(60*60*24*30))
+        self.response.set_status(200)
+
     def post(self, bin_key):
         try:
+            self.response.headers.add_header("Access-Control-Allow-Origin", "*")
+
             bin_db_key = db.Key.from_path('Bin', bin_key)
             bin = db.get(bin_db_key)
 
