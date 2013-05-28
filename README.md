@@ -86,10 +86,10 @@ E.g. if the output format is `csv`, then the default filename will be `data.csv`
 
 Parameters should be passed in the request body as key-value pairs formatted either in JSON (`application/json`) or url-encoded format (`application/x-www-form-urlencoded`).
 
-The response will contain a `Link` header with the Appendr URL representing the "bin" to which data should be sent:
+The response will contain a `Location` header with the Appendr URL representing the "bin" to which data should be sent:
 
     201 Created
-    Link: https://appendr.appspot.com/bins/:bin_id
+    Location: https://appendr.appspot.com/bins/:bin_id
 
 Example request:
 
@@ -107,7 +107,7 @@ Example request:
 Example response (after creating a Gist with a file named `my_data.json`):
 
     201 Created
-    Link: https://appendr.appspot.com/bins/123abc456def789ghi00
+    Location: https://appendr.appspot.com/bins/123abc456def789ghi00
 
 ### Send data to Appendr bin
 
