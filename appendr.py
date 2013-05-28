@@ -324,7 +324,7 @@ class BinHandler(webapp2.RequestHandler):
     def post(self):
         try:
             self.response.headers.add_header("Access-Control-Allow-Origin", "*")
-            self.response.headers.add_header("Access-Control-Expose-Headers", "Link")
+            self.response.headers.add_header("Access-Control-Expose-Headers", "Location")
 
             content_type = self.request.content_type
 
