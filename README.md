@@ -38,7 +38,8 @@ Appendr automatically adds the `date_created` timestamp to each key-value datase
 
 ## Features
 
-CORS support
+[CORS](http://en.wikipedia.org/wiki/Cross-origin_resource_sharing) support
+* Appendr may be called cross-domain from a JavaScript script in a browser
 
 Supported external storage services:
 * [GitHub Gist](https://gist.github.com/)
