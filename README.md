@@ -148,7 +148,7 @@ After which the file `my_data.json` in the created Gist will look like this:
 
 ## Credits
 
-Noam is built with many awesome open-source projects:
+Appendr is built with many awesome open-source projects:
 * [mimeparse](https://code.google.com/p/mimeparse/)
 
 ## License
