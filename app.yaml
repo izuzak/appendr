@@ -8,3 +8,7 @@ handlers:
 - url: /.*
   script: appendr.app
   secure: always
+
+- url: /tasks/append/.*
+  script: appendr.app
+  login: admin

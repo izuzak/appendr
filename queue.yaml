@@ -1,0 +1,40 @@
+queue:
+- name: queue0
+  rate: 500/s
+  bucket_size: 1
+
+- name: queue1
+  rate: 500/s
+  bucket_size: 1
+
+- name: queue2
+  rate: 500/s
+  bucket_size: 1
+
+- name: queue3
+  rate: 500/s
+  bucket_size: 1
+
+- name: queue4
+  rate: 500/s
+  bucket_size: 1
+
+- name: queue5
+  rate: 500/s
+  bucket_size: 1
+
+- name: queue6
+  rate: 500/s
+  bucket_size: 1
+
+- name: queue7
+  rate: 500/s
+  bucket_size: 1
+
+- name: queue8
+  rate: 500/s
+  bucket_size: 1
+
+- name: queue9
+  rate: 500/s
+  bucket_size: 1

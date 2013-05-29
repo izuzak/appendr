@@ -2,6 +2,7 @@ import webapp2
 import webapp2_extras.routes
 import webapp2_extras.security
 from google.appengine.api import urlfetch
+from google.appengine.api import taskqueue
 from google.appengine.ext import db
 from google.appengine.ext.db import polymodel
 from datetime import datetime
@@ -11,6 +12,7 @@ import cStringIO
 import csv
 import mimeparse
 import copy
+import dateutil.parser
 
 #
 # HELPERS
@@ -113,6 +115,13 @@ def append_data_(old_content, output_format, datetime_format, params):
         json_data = json.loads(old_content)
         json_data.append(params)
         return json.dumps(json_data, indent=2)
+
+def compute_queue_number_from_bin_id(bin_id, num_queues):
+    queue_num = 0
+    for ch in bin_id:
+        queue_num = (queue_num + ord(ch)) % num_queues
+
+    return "queue" + str(queue_num)
 
 #
 # MODELS
@@ -371,17 +380,42 @@ class DataHandler(webapp2.RequestHandler):
                 return
 
             params = get_request_params(self.request, content_type)
-            params['date_created'] = datetime.utcnow()
-            bin.date_updated = params['date_created']
-            bin.append_data(params)
-            bin.put()
+            params['date_created'] = str(datetime.utcnow())
+
+            queue_name = compute_queue_number_from_bin_id(bin_key, 10)
+
+            taskqueue.add(url='/tasks/append/' + bin_key, queue_name=queue_name, params=params)
 
             self.response.set_status(204)
         except AppendrError as e:
             self.response.set_status(e.code)
             self.response.out.write(e.msg)
 
+class AppendHandler(webapp2.RequestHandler):
+    def post(self, bin_key):
+        try:
+            bin_db_key = db.Key.from_path('Bin', bin_key)
+            bin = db.get(bin_db_key)
+
+            if (bin is None):
+                return
+
+            content_type = self.request.content_type
+
+            if content_type not in bin_data_supported_mime_types_post:
+                return
+
+            params = get_request_params(self.request, content_type)
+            params['date_created'] = dateutil.parser.parse(params['date_created'])
+
+            bin.date_updated = params['date_created']
+            bin.append_data(params)
+            bin.put()
+        except Exception as e:
+            return
+
 app = webapp2.WSGIApplication([
     webapp2.Route('/bins', handler=BinHandler),
     webapp2.Route('/bins/<bin_key:\w+>', handler=DataHandler, name="bin"),
+    webapp2.Route('/tasks/append/<bin_key:\w+>', handler=AppendHandler)
 ], debug=True)
