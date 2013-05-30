@@ -135,7 +135,7 @@ class Bin(polymodel.PolyModel):
     storage_backend = db.StringProperty()
 
     def get_url(self):
-        return webapp2.uri_for('bin', bin_key=self.key().name())
+        return webapp2.uri_for('bin', bin_key=self.key().name(), _full=True)
 
     @classmethod
     def generate_name(cls):
@@ -345,10 +345,7 @@ class BinHandler(webapp2.RequestHandler):
             bin = Bin.create(params)
             bin.put()
 
-            bin_key = bin.key().id_or_name()
-            bin_url = webapp2.uri_for('bin', bin_key=bin_key)
-
-            self.response.headers["Location"] = bin_url
+            self.response.headers["Location"] = bin.get_url()
             self.response.set_status(201)
         except AppendrError as e:
             self.response.set_status(e.code)
