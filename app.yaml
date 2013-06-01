@@ -12,3 +12,7 @@ handlers:
 - url: /tasks/append/.*
   script: appendr.app
   login: admin
+
+- url: /tasks/cleanup
+  script: appendr.app
+  login: admin

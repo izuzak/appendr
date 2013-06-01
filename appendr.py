@@ -13,6 +13,8 @@ import csv
 import mimeparse
 import copy
 import dateutil.parser
+import dateutil.relativedelta
+
 
 #
 # HELPERS
@@ -411,8 +413,17 @@ class AppendHandler(webapp2.RequestHandler):
         except Exception as e:
             return
 
+class CleanupHandler(webapp2.RequestHandler):
+    def get(self):
+        date_last_update = datetime.utcnow() + dateutil.relativedelta.relativedelta(days = -40)
+        unused_bins = Bin.all().order("-date_updated").filter("date_updated <", date_last_update).fetch(None)
+
+        for bin in unused_bins:
+            bin.delete()
+
 app = webapp2.WSGIApplication([
     webapp2.Route('/bins', handler=BinHandler),
     webapp2.Route('/bins/<bin_key:\w+>', handler=DataHandler, name="bin"),
-    webapp2.Route('/tasks/append/<bin_key:\w+>', handler=AppendHandler)
+    webapp2.Route('/tasks/append/<bin_key:\w+>', handler=AppendHandler),
+    webapp2.Route('/tasks/cleanup', handler=CleanupHandler)
 ], debug=True)

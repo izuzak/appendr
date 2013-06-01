@@ -1,0 +1,4 @@
+cron:
+- description: unused bin cleanup
+  url: /tasks/cleanup
+  schedule: every 24 hours
