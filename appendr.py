@@ -68,13 +68,17 @@ def get_values_sorted(keys, params):
   return data
 
 def serialize_bins(bins, content_type):
-    bins_info = []
-    for bin in bins:
-        bins_info.append(bin.get_info())
+    bins_info = None
+
+    if isinstance(bins, Bin):
+        bins_info = bins.get_info()
+    else:
+        bins_info = []
+        for bin in bins:
+            bins_info.append(bin.get_info())
 
     if content_type in ['application/json', 'text/plain']:
         return json.dumps(bins_info, indent=2)
-
 
 def append_data_(old_content, output_format, datetime_format, params):
     params['date_created'] = params['date_created'].strftime(datetime_format)
@@ -168,8 +172,14 @@ class GistBin(Bin):
     api_token = db.StringProperty()
     filename = db.StringProperty()
 
-    def get_gist_url(self):
+    def get_gist_html_url(self):
+        return "https://gist.github.com/" + self.gist_id
+
+    def get_gist_api_url(self):
         return "https://api.github.com/gists/" + self.gist_id
+
+    def get_gist_raw_url(self):
+        return "https://gist.github.com/raw/" + self.gist_id + "/" + self.filename
 
     def get_info(self):
         bin_info = Bin.get_info(self)
@@ -177,6 +187,9 @@ class GistBin(Bin):
         bin_info['is_public'] = self.is_public
         bin_info['gist_id'] = self.gist_id
         bin_info['filename'] = self.filename
+        bin_info['gist_html_url'] = self.get_gist_html_url()
+        bin_info['gist_raw_url'] = self.get_gist_raw_url()
+        bin_info['gist_api_url'] = self.get_gist_api_url()
 
         return bin_info
 
@@ -185,7 +198,7 @@ class GistBin(Bin):
             "Authorization": 'token ' + self.api_token
         }
 
-        gist_response = urlfetch.fetch(url=self.get_gist_url(), headers=auth_headers)
+        gist_response = urlfetch.fetch(url=self.get_gist_api_url(), headers=auth_headers)
 
         if gist_response.status_code != 200:
             raise AppendrError(gist_response.status_code, "")
@@ -214,7 +227,7 @@ class GistBin(Bin):
             "Authorization": 'token ' + self.api_token
         }
 
-        result = urlfetch.fetch(url=self.get_gist_url(),
+        result = urlfetch.fetch(url=self.get_gist_api_url(),
                         payload=new_payload,
                         method=urlfetch.POST,
                         headers=gist_headers)
@@ -344,12 +357,18 @@ class BinHandler(webapp2.RequestHandler):
                 self.error(415)
                 return
 
+            accept_header = mimeparse.best_match(bins_supported_mime_types, self.request.headers['Accept'])
+
+            if not accept_header:
+                accept_header = "application/json"
+
             params = get_request_params(self.request, content_type)
             bin = Bin.create(params)
             bin.put()
 
             self.response.headers["Location"] = bin.get_url()
             self.response.set_status(201)
+            self.response.out.write(serialize_bins(bin, accept_header))
         except AppendrError as e:
             self.response.set_status(e.code)
             self.response.out.write(e.msg)
