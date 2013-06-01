@@ -170,7 +170,6 @@ class Bin(polymodel.PolyModel):
 
 class GistBin(Bin):
     is_public = db.BooleanProperty()
-    github_user_id = db.IntegerProperty()
     gist_id = db.StringProperty()
     api_token = db.StringProperty()
     filename = db.StringProperty()
@@ -261,7 +260,6 @@ class GistBin(Bin):
         json_content = json.loads(result.content)
 
         self.is_public = params['is_public']
-        self.github_user_id = json_content['user']['id']
         self.gist_id = json_content['id']
         self.api_token = params['api_token']
         self.filename = params['filename']
