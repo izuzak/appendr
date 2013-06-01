@@ -68,21 +68,12 @@ def get_values_sorted(keys, params):
   return data
 
 def serialize_bins(bins, content_type):
-    key_list = ["date_created", "date_updated", "bin_id", "bin_url", "output_format", "datetime_format", "storage_backend"]
-
-    bins_json = []
+    bins_info = []
     for bin in bins:
-        bins_json.append({
-            "bin_id" : bin.key().name(),
-            "bin_url" : bin.get_url(),
-            "date_created" : bin.date_created.strftime(bin.datetime_format),
-            "date_updated" : bin.date_updated.strftime(bin.datetime_format),
-            "output_format" : bin.output_format,
-            "datetime_format" : bin.datetime_format,
-            "storage_backend" : bin.storage_backend
-        })
+        bins_info.append(bin.get_info())
+
     if content_type in ['application/json', 'text/plain']:
-        return json.dumps(bins_json, indent=2)
+        return json.dumps(bins_info, indent=2)
 
 
 def append_data_(old_content, output_format, datetime_format, params):
@@ -131,6 +122,17 @@ class Bin(polymodel.PolyModel):
     def get_url(self):
         return webapp2.uri_for('bin', bin_key=self.key().name(), _full=True)
 
+    def get_info(self):
+        return {
+          "bin_id" : self.key().name(),
+          "bin_url" : self.get_url(),
+          "date_created" : self.date_created.strftime(self.datetime_format),
+          "date_updated" : self.date_updated.strftime(self.datetime_format),
+          "output_format" : self.output_format,
+          "datetime_format" : self.datetime_format,
+          "storage_backend" : self.storage_backend
+        }
+
     @classmethod
     def generate_name(cls):
         bin_name = None
@@ -168,6 +170,15 @@ class GistBin(Bin):
 
     def get_gist_url(self):
         return "https://api.github.com/gists/" + self.gist_id
+
+    def get_info(self):
+        bin_info = Bin.get_info(self)
+
+        bin_info['is_public'] = self.is_public
+        bin_info['gist_id'] = self.gist_id
+        bin_info['filename'] = self.filename
+
+        return bin_info
 
     def append_data(self, params):
         auth_headers = {
