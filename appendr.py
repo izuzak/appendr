@@ -81,15 +81,7 @@ def serialize_bins(bins, content_type):
             "datetime_format" : bin.datetime_format,
             "storage_backend" : bin.storage_backend
         })
-
-    if content_type in ['text/plain', 'text/csv']:
-        output = cStringIO.StringIO()
-        csv_writer = csv.writer(output, delimiter=';', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-        csv_writer.writerow(key_list)
-        for bin in bins_json:
-          csv_writer.writerow(get_values_sorted(key_list, bin))
-        return output.getvalue()
-    elif content_type == 'application/json':
+    if content_type in ['application/json', 'text/plain']:
         return json.dumps(bins_json, indent=2)
 
 
@@ -286,7 +278,7 @@ output_data_formats_empty_string = {
 # Bin list format
 #
 
-bins_supported_mime_types = ['text/plain', 'text/csv', 'application/json']
+bins_supported_mime_types = ['text/plain', 'application/json']
 
 #
 # Accepted data formats
