@@ -381,6 +381,30 @@ class DataHandler(webapp2.RequestHandler):
         self.response.headers.add_header("Access-Control-Max-Age", str(60*60*24*30))
         self.response.set_status(200)
 
+    def get(self, bin_key):
+        try:
+            self.response.headers.add_header("Access-Control-Allow-Origin", "*")
+
+            accept_header = mimeparse.best_match(bins_supported_mime_types, self.request.headers['Accept'])
+
+            if not accept_header:
+                self.error(406)
+                return
+
+            bin_db_key = db.Key.from_path('Bin', bin_key)
+            bin = db.get(bin_db_key)
+
+            if (bin is None):
+                self.error(404)
+                return
+
+            self.response.headers['Content-Type'] = accept_header
+            self.response.set_status(200)
+            self.response.out.write(serialize_bins(bin, accept_header))
+        except AppendrError as e:
+            self.response.set_status(e.code)
+            self.response.out.write(e.msg)
+
     def post(self, bin_key):
         try:
             self.response.headers.add_header("Access-Control-Allow-Origin", "*")
