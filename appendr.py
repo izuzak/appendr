@@ -205,14 +205,7 @@ class GistBin(Bin):
 
         json_gist = json.loads(gist_response.content)
 
-        raw_file_response = urlfetch.fetch(
-                                  url=json_gist['files'][self.filename]['raw_url'],
-                                  headers=auth_headers)
-
-        if raw_file_response.status_code != 200:
-            raise AppendrError(raw_file_response.status_code, "")
-
-        new_content = append_data_(raw_file_response.content, self.output_format, self.datetime_format, params)
+        new_content = append_data_(json_gist['files'][self.filename]['content'], self.output_format, self.datetime_format, params)
 
         new_payload = json.dumps({
             "files" : {
