@@ -80,6 +80,19 @@ def serialize_bins(bins, content_type):
     if content_type in ['application/json', 'text/plain']:
         return json.dumps(bins_info, indent=2)
 
+def serialize_tasks(tasks, content_type):
+    tasks_info = None
+
+    if isinstance(tasks, Task):
+        tasks_info = tasks.get_info()
+    else:
+        tasks_info = []
+        for task in tasks:
+            tasks_info.append(task.get_info())
+
+    if content_type in ['application/json', 'text/plain']:
+        return json.dumps(tasks_info, indent=2)
+
 def append_data_(old_content, output_format, datetime_format, params):
     params['date_created'] = params['date_created'].strftime(datetime_format)
 
@@ -273,6 +286,39 @@ class GistBin(Bin):
         self.api_token = params['api_token']
         self.filename = params['filename']
 
+
+class Task(db.Model):
+    status = db.StringProperty()
+    status_msg = db.StringProperty()
+    date_created = db.DateTimeProperty(auto_now_add=True)
+    date_updated = db.DateTimeProperty(auto_now_add=True)
+
+    @classmethod
+    def generate_name(cls):
+        task_name = None
+        while True:
+            task_name = webapp2_extras.security.generate_random_string(20)
+
+            task = Task.get_by_key_name(task_name)
+            if task is None:
+                break
+
+        return task_name
+
+    def get_url(self):
+        return webapp2.uri_for('task', task_key=self.key().name(), _full=True)
+
+    def get_info(self):
+        return {
+          "task_id" : self.key().name(),
+          "task_url" : self.get_url(),
+          "date_created" : self.date_created.strftime('%Y-%m-%dT%H:%M:%SZ'),
+          "date_updated" : self.date_updated.strftime('%Y-%m-%dT%H:%M:%SZ'),
+          "status" : self.status,
+          "status_msg" : self.status_msg
+        }
+
+
 #
 # STORAGE BACKENDS
 #
@@ -296,6 +342,8 @@ output_data_formats_empty_string = {
 #
 
 bins_supported_mime_types = ['text/plain', 'application/json']
+
+tasks_supported_mime_types = ['text/plain', 'application/json']
 
 #
 # Accepted data formats
@@ -419,16 +467,34 @@ class DataHandler(webapp2.RequestHandler):
             params['date_created'] = str(datetime.utcnow())
 
             queue_name = compute_queue_number_from_bin_id(bin_key, 10)
+            task_name = Task.generate_name()
 
-            taskqueue.add(url='/tasks/append/' + bin_key, queue_name=queue_name, params=params)
+            task = Task(key_name=task_name)
+            task.status = "queued"
+            task.status_msg = ""
+            task.put()
 
-            self.response.set_status(204)
+            taskqueue.add(
+                    url='/tasks/append/' + bin_key,
+                    queue_name=queue_name,
+                    name=task_name,
+                    params=params)
+
+            self.response.headers["Location"] = task.get_url()
+            self.response.set_status(202)
         except AppendrError as e:
             self.response.set_status(e.code)
             self.response.out.write(e.msg)
 
 class AppendHandler(webapp2.RequestHandler):
     def post(self, bin_key):
+        task_key = self.request.headers["X-AppEngine-TaskName"]
+        task_db_key = db.Key.from_path('Task', task_key)
+        task = db.get(task_db_key)
+
+        if (task is None):
+            return
+
         try:
             bin_db_key = db.Key.from_path('Bin', bin_key)
             bin = db.get(bin_db_key)
@@ -447,10 +513,19 @@ class AppendHandler(webapp2.RequestHandler):
             bin.date_updated = params['date_created']
             bin.append_data(params)
             bin.put()
+
+            task.date_updated = datetime.utcnow()
+            task.status = "completed"
+            task.put()
+
         except Exception as e:
+            task.date_updated = datetime.utcnow()
+            task.status = "failed"
+            task.status_msg = str(e)
+            task.put()
             return
 
-class CleanupHandler(webapp2.RequestHandler):
+class BinCleanupHandler(webapp2.RequestHandler):
     def get(self):
         date_last_update = datetime.utcnow() + dateutil.relativedelta.relativedelta(days = -40)
         unused_bins = Bin.all().order("-date_updated").filter("date_updated <", date_last_update).fetch(None)
@@ -458,9 +533,47 @@ class CleanupHandler(webapp2.RequestHandler):
         for bin in unused_bins:
             bin.delete()
 
+class TaskStatusCleanupHandler(webapp2.RequestHandler):
+    def get(self):
+        date_last_update = datetime.utcnow() + dateutil.relativedelta.relativedelta(hours = -24)
+        unchecked_tasks = Task.all().order("-date_updated").filter("date_updated <", date_last_update).fetch(None)
+
+        for task in unchecked_tasks:
+            task.delete()
+
+class TaskStatusHandler(webapp2.RequestHandler):
+    def options(self, bin_key):
+        self.response.headers.add_header("Access-Control-Allow-Origin", "*")
+        self.response.headers.add_header("Access-Control-Allow-Methods", "GET")
+        self.response.headers.add_header("Access-Control-Allow-Headers", "Content-Type")
+        self.response.headers.add_header("Access-Control-Max-Age", str(60*60*24*30))
+        self.response.set_status(200)
+
+    def get(self, task_key):
+        self.response.headers.add_header("Access-Control-Allow-Origin", "*")
+
+        accept_header = mimeparse.best_match(tasks_supported_mime_types, self.request.headers['Accept'])
+
+        if not accept_header:
+            self.error(406)
+            return
+
+        task_db_key = db.Key.from_path('Task', task_key)
+        task = db.get(task_db_key)
+
+        if (task is None):
+            self.error(404)
+            return
+
+        self.response.headers['Content-Type'] = accept_header
+        self.response.set_status(200)
+        self.response.out.write(serialize_tasks(task, accept_header))
+
 app = webapp2.WSGIApplication([
     webapp2.Route('/bins', handler=BinHandler),
     webapp2.Route('/bins/<bin_key:\w+>', handler=DataHandler, name="bin"),
     webapp2.Route('/tasks/append/<bin_key:\w+>', handler=AppendHandler),
-    webapp2.Route('/tasks/cleanup', handler=CleanupHandler)
+    webapp2.Route('/tasks/cleanup_bins', handler=BinCleanupHandler),
+    webapp2.Route('/tasks/cleanup_taskstatus', handler=TaskStatusCleanupHandler),
+    webapp2.Route('/tasks/status/<task_key:\w+>', handler=TaskStatusHandler, name="task")
 ], debug=True)

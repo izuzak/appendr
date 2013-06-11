@@ -13,6 +13,13 @@ handlers:
   script: appendr.app
   login: admin
 
-- url: /tasks/cleanup
+- url: /tasks/cleanup_bins
   script: appendr.app
   login: admin
+
+- url: /tasks/cleanup_taskstatus
+  script: appendr.app
+  login: admin
+
+- url: /tasks/status/.*
+  script: appendr.app

@@ -1,4 +1,8 @@
 cron:
 - description: unused bin cleanup
-  url: /tasks/cleanup
+  url: /tasks/cleanup_bins
+  schedule: every 24 hours
+
+- description: append task cleanup
+  url: /tasks/cleanup_taskstatus
   schedule: every 24 hours
