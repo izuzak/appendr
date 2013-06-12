@@ -26,6 +26,12 @@ class AppendrError(Exception):
         self.code = code
         self.msg = msg
 
+def get_best_mime_match_or_default(accept_header, available_types, default=None):
+    if accept_header is None:
+        return default
+    else:
+        return mimeparse.best_match(available_types, accept_header)
+
 def validate_non_empty_string(name, value):
     if not (isinstance(value, basestring) and value != ""):
         raise ValueError("Invalid value for parameter %r: %r. Parameter should be a non-empty string." % (name, value))
@@ -342,8 +348,10 @@ output_data_formats_empty_string = {
 #
 
 bins_supported_mime_types = ['text/plain', 'application/json']
+bins_default_mime_type = 'application/json'
 
 tasks_supported_mime_types = ['text/plain', 'application/json']
+tasks_default_mime_type = 'application/json'
 
 #
 # Accepted data formats
@@ -368,7 +376,10 @@ class BinHandler(webapp2.RequestHandler):
         try:
             self.response.headers.add_header("Access-Control-Allow-Origin", "*")
 
-            accept_header = mimeparse.best_match(bins_supported_mime_types, self.request.headers['Accept'])
+            accept_header = get_best_mime_match_or_default(
+                self.request.headers['Accept'],
+                bins_supported_mime_types,
+                bins_default_mime_type)
 
             if not accept_header:
                 self.error(406)
@@ -398,10 +409,14 @@ class BinHandler(webapp2.RequestHandler):
                 self.error(415)
                 return
 
-            accept_header = mimeparse.best_match(bins_supported_mime_types, self.request.headers['Accept'])
+            accept_header = get_best_mime_match_or_default(
+                self.request.headers['Accept'],
+                bins_supported_mime_types,
+                bins_default_mime_type)
 
             if not accept_header:
-                accept_header = "application/json"
+                self.error(406)
+                return
 
             params = get_request_params(self.request, content_type)
             bin = Bin.create(params)
@@ -426,7 +441,10 @@ class DataHandler(webapp2.RequestHandler):
         try:
             self.response.headers.add_header("Access-Control-Allow-Origin", "*")
 
-            accept_header = mimeparse.best_match(bins_supported_mime_types, self.request.headers['Accept'])
+            accept_header = get_best_mime_match_or_default(
+                self.request.headers['Accept'],
+                bins_supported_mime_types,
+                bins_default_mime_type)
 
             if not accept_header:
                 self.error(406)
@@ -550,7 +568,10 @@ class TaskStatusHandler(webapp2.RequestHandler):
     def get(self, task_key):
         self.response.headers.add_header("Access-Control-Allow-Origin", "*")
 
-        accept_header = mimeparse.best_match(tasks_supported_mime_types, self.request.headers['Accept'])
+        accept_header = get_best_mime_match_or_default(
+                self.request.headers['Accept'],
+                tasks_supported_mime_types,
+                tasks_default_mime_type)
 
         if not accept_header:
             self.error(406)
