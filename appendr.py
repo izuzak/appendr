@@ -353,6 +353,9 @@ bins_default_mime_type = 'application/json'
 tasks_supported_mime_types = ['text/plain', 'application/json']
 tasks_default_mime_type = 'application/json'
 
+main_supported_mime_types = ['text/plain', 'application/json']
+main_default_mime_type = 'application/json'
+
 #
 # Accepted data formats
 #
@@ -591,8 +594,38 @@ class TaskStatusHandler(webapp2.RequestHandler):
         self.response.set_status(200)
         self.response.out.write(serialize_tasks(task, accept_header))
 
+class MainHandler(webapp2.RequestHandler):
+    def options(self, bin_key):
+        self.response.headers.add_header("Access-Control-Allow-Origin", "*")
+        self.response.headers.add_header("Access-Control-Allow-Methods", "GET")
+        self.response.headers.add_header("Access-Control-Allow-Headers", "Content-Type")
+        self.response.headers.add_header("Access-Control-Max-Age", str(60*60*24*30))
+        self.response.headers.add_header("Allow", "OPTIONS, GET")
+        self.response.set_status(200)
+
+    def get(self):
+        self.response.headers.add_header("Access-Control-Allow-Origin", "*")
+
+        accept_header = get_best_mime_match_or_default(
+                self.request.headers['Accept'],
+                main_supported_mime_types,
+                main_default_mime_type)
+
+        if not accept_header:
+            self.error(406)
+            return
+
+        resp_content = json.dumps({
+            "bins_url" : webapp2.uri_for('bins', _full=True)
+        }, indent=2)
+
+        self.response.headers['Content-Type'] = accept_header
+        self.response.set_status(200)
+        self.response.out.write(resp_content)
+
 app = webapp2.WSGIApplication([
-    webapp2.Route('/bins', handler=BinHandler),
+    webapp2.Route('/', handler=MainHandler),
+    webapp2.Route('/bins', handler=BinHandler, name="bins"),
     webapp2.Route('/bins/<bin_key:\w+>', handler=DataHandler, name="bin"),
     webapp2.Route('/tasks/append/<bin_key:\w+>', handler=AppendHandler),
     webapp2.Route('/tasks/cleanup_bins', handler=BinCleanupHandler),
