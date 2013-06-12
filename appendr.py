@@ -370,6 +370,7 @@ class BinHandler(webapp2.RequestHandler):
         self.response.headers.add_header("Access-Control-Allow-Methods", "GET, POST")
         self.response.headers.add_header("Access-Control-Allow-Headers", "Content-Type")
         self.response.headers.add_header("Access-Control-Max-Age", str(60*60*24*30))
+        self.response.headers.add_header("Allow", "OPTIONS, GET, POST")
         self.response.set_status(200)
 
     def get(self):
@@ -435,6 +436,7 @@ class DataHandler(webapp2.RequestHandler):
         self.response.headers.add_header("Access-Control-Allow-Methods", "GET, POST")
         self.response.headers.add_header("Access-Control-Allow-Headers", "Content-Type")
         self.response.headers.add_header("Access-Control-Max-Age", str(60*60*24*30))
+        self.response.headers.add_header("Allow", "OPTIONS, GET, POST")
         self.response.set_status(200)
 
     def get(self, bin_key):
@@ -563,6 +565,7 @@ class TaskStatusHandler(webapp2.RequestHandler):
         self.response.headers.add_header("Access-Control-Allow-Methods", "GET")
         self.response.headers.add_header("Access-Control-Allow-Headers", "Content-Type")
         self.response.headers.add_header("Access-Control-Max-Age", str(60*60*24*30))
+        self.response.headers.add_header("Allow", "OPTIONS, GET")
         self.response.set_status(200)
 
     def get(self, task_key):
