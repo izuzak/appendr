@@ -312,7 +312,7 @@ class Task(db.Model):
         return task_name
 
     def get_url(self):
-        return webapp2.uri_for('task', task_key=self.key().name(), _full=True)
+        return webapp2.uri_for('task_status', task_key=self.key().name(), _full=True)
 
     def get_info(self):
         return {
@@ -500,7 +500,7 @@ class DataHandler(webapp2.RequestHandler):
             task.put()
 
             taskqueue.add(
-                    url='/tasks/append/' + bin_key,
+                    url=webapp2.uri_for('task_append', bin_key=bin_key),
                     queue_name=queue_name,
                     name=task_name,
                     payload=task_body,
@@ -624,11 +624,11 @@ class MainHandler(webapp2.RequestHandler):
         self.response.out.write(resp_content)
 
 app = webapp2.WSGIApplication([
-    webapp2.Route('/', handler=MainHandler),
+    webapp2.Route('/', handler=MainHandler, name="main"),
     webapp2.Route('/bins', handler=BinHandler, name="bins"),
     webapp2.Route('/bins/<bin_key:\w+>', handler=DataHandler, name="bin"),
-    webapp2.Route('/tasks/append/<bin_key:\w+>', handler=AppendHandler),
-    webapp2.Route('/tasks/cleanup_bins', handler=BinCleanupHandler),
-    webapp2.Route('/tasks/cleanup_taskstatus', handler=TaskStatusCleanupHandler),
-    webapp2.Route('/tasks/status/<task_key:\w+>', handler=TaskStatusHandler, name="task")
+    webapp2.Route('/tasks/append/<bin_key:\w+>', handler=AppendHandler, name="task_append"),
+    webapp2.Route('/tasks/cleanup_bins', handler=BinCleanupHandler, name="task_bin_cleanup"),
+    webapp2.Route('/tasks/cleanup_taskstatus', handler=TaskStatusCleanupHandler, name="task_status_cleanup"),
+    webapp2.Route('/tasks/status/<task_key:\w+>', handler=TaskStatusHandler, name="task_status")
 ], debug=True)
