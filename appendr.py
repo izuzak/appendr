@@ -417,7 +417,7 @@ class BinHandler(webapp2.RequestHandler):
 class DataHandler(webapp2.RequestHandler):
     def options(self, bin_key):
         self.response.headers.add_header("Access-Control-Allow-Origin", "*")
-        self.response.headers.add_header("Access-Control-Allow-Methods", "POST")
+        self.response.headers.add_header("Access-Control-Allow-Methods", "GET, POST")
         self.response.headers.add_header("Access-Control-Allow-Headers", "Content-Type")
         self.response.headers.add_header("Access-Control-Max-Age", str(60*60*24*30))
         self.response.set_status(200)
