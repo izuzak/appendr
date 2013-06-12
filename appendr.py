@@ -465,6 +465,8 @@ class DataHandler(webapp2.RequestHandler):
 
             params = get_request_params(self.request, content_type)
             params['date_created'] = str(datetime.utcnow())
+            task_body = json.dumps(params)
+            task_headers = {'Content-Type' : 'application/json'}
 
             queue_name = compute_queue_number_from_bin_id(bin_key, 10)
             task_name = Task.generate_name()
@@ -478,7 +480,8 @@ class DataHandler(webapp2.RequestHandler):
                     url='/tasks/append/' + bin_key,
                     queue_name=queue_name,
                     name=task_name,
-                    params=params)
+                    payload=task_body,
+                    headers=task_headers)
 
             self.response.headers["Location"] = task.get_url()
             self.response.set_status(202)
@@ -502,12 +505,7 @@ class AppendHandler(webapp2.RequestHandler):
             if (bin is None):
                 return
 
-            content_type = self.request.content_type
-
-            if content_type not in bin_data_supported_mime_types_post:
-                return
-
-            params = get_request_params(self.request, content_type)
+            params = get_request_params(self.request, self.request.content_type)
             params['date_created'] = dateutil.parser.parse(params['date_created'])
 
             bin.date_updated = params['date_created']
