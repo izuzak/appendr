@@ -153,7 +153,8 @@ class Bin(polymodel.PolyModel):
           "date_updated" : self.date_updated.strftime(self.datetime_format),
           "output_format" : self.output_format,
           "datetime_format" : self.datetime_format,
-          "storage_backend" : self.storage_backend
+          "storage_backend" : self.storage_backend,
+          "tasks" : [task.get_info() for task in self.task_set]
         }
 
     @classmethod
@@ -294,6 +295,7 @@ class GistBin(Bin):
 
 
 class Task(db.Model):
+    bin = db.ReferenceProperty(Bin)
     status = db.StringProperty()
     status_msg = db.StringProperty()
     date_created = db.DateTimeProperty(auto_now_add=True)
@@ -312,18 +314,19 @@ class Task(db.Model):
         return task_name
 
     def get_url(self):
-        return webapp2.uri_for('task_status', task_key=self.key().name(), _full=True)
+        return webapp2.uri_for('task_status', bin_key=self.bin.key().name(), task_key=self.key().name(), _full=True)
 
     def get_info(self):
         return {
           "task_id" : self.key().name(),
           "task_url" : self.get_url(),
+          "bin_id" : self.bin.key().name(),
+          "bin_url" : self.bin.get_url(),
           "date_created" : self.date_created.strftime('%Y-%m-%dT%H:%M:%SZ'),
           "date_updated" : self.date_updated.strftime('%Y-%m-%dT%H:%M:%SZ'),
           "status" : self.status,
           "status_msg" : self.status_msg
         }
-
 
 #
 # STORAGE BACKENDS
@@ -495,6 +498,7 @@ class DataHandler(webapp2.RequestHandler):
             task_name = Task.generate_name()
 
             task = Task(key_name=task_name)
+            task.bin = bin
             task.status = "queued"
             task.status_msg = ""
             task.put()
@@ -571,7 +575,7 @@ class TaskStatusHandler(webapp2.RequestHandler):
         self.response.headers.add_header("Allow", "OPTIONS, GET")
         self.response.set_status(200)
 
-    def get(self, task_key):
+    def get(self, bin_key, task_key):
         self.response.headers.add_header("Access-Control-Allow-Origin", "*")
 
         accept_header = get_best_mime_match_or_default(
@@ -583,12 +587,22 @@ class TaskStatusHandler(webapp2.RequestHandler):
             self.error(406)
             return
 
-        task_db_key = db.Key.from_path('Task', task_key)
-        task = db.get(task_db_key)
+        if not task_key:
+            bin_db_key = db.Key.from_path('Bin', bin_key)
+            bin = db.get(bin_db_key)
 
-        if (task is None):
-            self.error(404)
-            return
+            if (bin is None):
+                self.error(404)
+                return
+
+            task = bin.task_set
+        else:
+            task_db_key = db.Key.from_path('Task', task_key)
+            task = db.get(task_db_key)
+
+            if (task is None):
+                self.error(404)
+                return
 
         self.response.headers['Content-Type'] = accept_header
         self.response.set_status(200)
@@ -627,8 +641,9 @@ app = webapp2.WSGIApplication([
     webapp2.Route('/', handler=MainHandler, name="main"),
     webapp2.Route('/bins', handler=BinHandler, name="bins"),
     webapp2.Route('/bins/<bin_key:\w+>', handler=DataHandler, name="bin"),
+    webapp2.Route('/bins/<bin_key:\w+>/tasks', handler=TaskStatusHandler, defaults={"task_key" : None}, name="tasks"),
+    webapp2.Route('/bins/<bin_key:\w+>/tasks/<task_key:\w*>', handler=TaskStatusHandler, name="task_status"),
     webapp2.Route('/tasks/append/<bin_key:\w+>', handler=AppendHandler, name="task_append"),
     webapp2.Route('/tasks/cleanup_bins', handler=BinCleanupHandler, name="task_bin_cleanup"),
-    webapp2.Route('/tasks/cleanup_taskstatus', handler=TaskStatusCleanupHandler, name="task_status_cleanup"),
-    webapp2.Route('/tasks/status/<task_key:\w+>', handler=TaskStatusHandler, name="task_status")
+    webapp2.Route('/tasks/cleanup_taskstatus', handler=TaskStatusCleanupHandler, name="task_status_cleanup")
 ], debug=True)
