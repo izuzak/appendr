@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+        {% block head %}
+        {% endblock %}
+        <title>{% block title %}{% endblock %} - Appendr</title>
+        <meta name="description" content="{% block description %}{% endblock %}">
+        <meta name="viewport" content="width=device-width">
+
+        <link rel="stylesheet" href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.2.2/css/bootstrap-combined.min.css" />
+        <link rel="stylesheet" href="/web/stylesheets/appendr.css" />
+    </head>
+    <body>
+        {% block header %}{% endblock %}
+
+        <div class="content" >
+            {% block content %}{% endblock %}
+        </div>
+
+        <footer class="footer">
+          <div class="container">
+              {% block footer %}{% endblock %}
+              <ul class="footer-links">
+                <li><a href="https://github.com/izuzak/appendr">API docs</a></li>
+                <li class="muted">·</li>
+                <li><a href="https://github.com/izuzak/appendr/issues">Feedback/Issues</a></li>
+                <li class="muted">·</li>
+                <li><a href="https://github.com/izuzak/appendr">Source code</a></li>
+                <li class="muted">·</li>
+                <li><a href="https://github.com/izuzak/appendr/blob/master/LICENSE">License (Apache v2.0)</a></li>
+              </ul>
+              <p>
+                  Created by <a href="http://ivanzuzak.info">Ivan Zuzak</a>.
+                  This site is built with <a href="https://developers.google.com/appengine/">AppEngine</a>, <a href="http://jinja.pocoo.org/docs/">Jinja2</a>, <a href="http://twitter.github.com/bootstrap/">Bootstrap</a>, and <a href="http://jquery.com/">jQuery</a>.
+              </p>
+          </div>
+        </footer>
+
+        <script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.2/jquery.min.js"></script>
+        <script src="//twitter.github.io/bootstrap/assets/js/bootstrap-tab.js"></script>
+        <script src="//twitter.github.io/bootstrap/assets/js/bootstrap-button.js"></script>
+        <script src="//twitter.github.io/bootstrap/assets/js/bootstrap-affix.js"></script>
+        {% block scripts %}{% endblock %}
+    </body>
+</html>

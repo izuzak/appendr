@@ -36,10 +36,15 @@ If the JSON format was chosen while creating an Appendr "bin", the Gist would in
 
 Appendr automatically adds the `date_created` timestamp to each key-value dataset it receives.
 
+A Web interface for creating and viewing bins is [also available](https://appendr.appspot.com).
+
 ## Features
 
 [CORS](http://en.wikipedia.org/wiki/Cross-origin_resource_sharing) support
 * Appendr may be called cross-domain from a JavaScript script in a browser
+
+Support for concurrent appends
+* Appendr will correctly handle multiple data appends sent to it at the same time
 
 Supported external storage services:
 * [GitHub Gist](https://gist.github.com/)
@@ -150,6 +155,10 @@ After which the file `my_data.json` in the created Gist will look like this:
 
 Appendr is built with many awesome open-source projects:
 * [mimeparse](https://code.google.com/p/mimeparse/)
+* [dateutil](http://labix.org/python-dateutil)
+* [Jinja2](http://jinja.pocoo.org/docs/)
+* [Bootstrap](http://twitter.github.io/bootstrap/index.html)
+* [JQuery](http://jquery.com/)
 
 ## License
 

@@ -4,10 +4,16 @@ runtime: python27
 api_version: 1
 threadsafe: true
 
+libraries:
+- name: webapp2
+  version: latest
+
+- name: jinja2
+  version: latest
+
 handlers:
-- url: /.*
-  script: appendr.app
-  secure: always
+- url: /web/stylesheets.*
+  static_dir: web/stylesheets
 
 - url: /tasks/append/.*
   script: appendr.app
@@ -21,5 +27,6 @@ handlers:
   script: appendr.app
   login: admin
 
-- url: /tasks/status/.*
+- url: /.*
   script: appendr.app
+  secure: always

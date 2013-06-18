@@ -1,12 +1,14 @@
 import webapp2
 import webapp2_extras.routes
 import webapp2_extras.security
+import jinja2
 from google.appengine.api import urlfetch
 from google.appengine.api import taskqueue
 from google.appengine.ext import db
 from google.appengine.ext.db import polymodel
 from datetime import datetime
 from inspect import isfunction
+import os
 import json
 import cStringIO
 import csv
@@ -15,6 +17,12 @@ import copy
 import dateutil.parser
 import dateutil.relativedelta
 
+
+print os.path.dirname(__file__)
+
+JINJA_ENVIRONMENT = jinja2.Environment(
+    loader=jinja2.FileSystemLoader(os.path.dirname(__file__) + "/web"),
+    extensions=['jinja2.ext.autoescape'])
 
 #
 # HELPERS
@@ -85,8 +93,14 @@ def serialize_bins(bins, content_type):
 
     if content_type in ['application/json', 'text/plain']:
         return json.dumps(bins_info, indent=2)
+    elif content_type in ['text/html']:
+        if isinstance(bins, Bin):
+            template = JINJA_ENVIRONMENT.get_template('bin.html')
+        else:
+            template = JINJA_ENVIRONMENT.get_template('bins.html')
+        return template.render({"bins" : bins_info})
 
-def serialize_tasks(tasks, content_type):
+def serialize_tasks(tasks, bin, content_type):
     tasks_info = None
 
     if isinstance(tasks, Task):
@@ -98,6 +112,12 @@ def serialize_tasks(tasks, content_type):
 
     if content_type in ['application/json', 'text/plain']:
         return json.dumps(tasks_info, indent=2)
+    elif content_type in ['text/html']:
+        if isinstance(tasks, Task):
+            template = JINJA_ENVIRONMENT.get_template('task.html')
+        else:
+            template = JINJA_ENVIRONMENT.get_template('tasks.html')
+        return template.render({"tasks" : tasks_info, "bin" : bin.get_info()})
 
 def append_data_(old_content, output_format, datetime_format, params):
     params['date_created'] = params['date_created'].strftime(datetime_format)
@@ -145,6 +165,15 @@ class Bin(polymodel.PolyModel):
     def get_url(self):
         return webapp2.uri_for('bin', bin_key=self.key().name(), _full=True)
 
+    def get_tasks_url(self):
+        return webapp2.uri_for('tasks', bin_key=self.key().name(), _full=True)
+
+    def get_raw_content_url(self):
+        return None
+
+    def get_html_content_url(self):
+        return None
+
     def get_info(self):
         return {
           "bin_id" : self.key().name(),
@@ -154,6 +183,9 @@ class Bin(polymodel.PolyModel):
           "output_format" : self.output_format,
           "datetime_format" : self.datetime_format,
           "storage_backend" : self.storage_backend,
+          "content_raw_url" : self.get_raw_content_url(),
+          "content_html_url" : self.get_html_content_url(),
+          "tasks_url" : self.get_tasks_url(),
           "tasks" : [task.get_info() for task in self.task_set]
         }
 
@@ -201,14 +233,18 @@ class GistBin(Bin):
     def get_gist_raw_url(self):
         return "https://gist.github.com/raw/" + self.gist_id + "/" + self.filename
 
+    def get_raw_content_url(self):
+        return self.get_gist_raw_url()
+
+    def get_html_content_url(self):
+        return self.get_gist_html_url()
+
     def get_info(self):
         bin_info = Bin.get_info(self)
 
         bin_info['is_public'] = self.is_public
         bin_info['gist_id'] = self.gist_id
         bin_info['filename'] = self.filename
-        bin_info['gist_html_url'] = self.get_gist_html_url()
-        bin_info['gist_raw_url'] = self.get_gist_raw_url()
         bin_info['gist_api_url'] = self.get_gist_api_url()
 
         return bin_info
@@ -320,6 +356,7 @@ class Task(db.Model):
         return {
           "task_id" : self.key().name(),
           "task_url" : self.get_url(),
+          "tasks_url" : self.bin.get_tasks_url(),
           "bin_id" : self.bin.key().name(),
           "bin_url" : self.bin.get_url(),
           "date_created" : self.date_created.strftime('%Y-%m-%dT%H:%M:%SZ'),
@@ -350,13 +387,13 @@ output_data_formats_empty_string = {
 # Bin list format
 #
 
-bins_supported_mime_types = ['text/plain', 'application/json']
+bins_supported_mime_types = ['text/html', 'text/plain', 'application/json']
 bins_default_mime_type = 'application/json'
 
-tasks_supported_mime_types = ['text/plain', 'application/json']
+tasks_supported_mime_types = ['text/html', 'text/plain', 'application/json']
 tasks_default_mime_type = 'application/json'
 
-main_supported_mime_types = ['text/plain', 'application/json']
+main_supported_mime_types = ['text/html', 'text/plain', 'application/json']
 main_default_mime_type = 'application/json'
 
 #
@@ -412,6 +449,10 @@ class BinHandler(webapp2.RequestHandler):
 
             content_type = self.request.content_type
 
+            print self.request.body
+            print self.request.headers.get("content-type")
+            print bin_supported_mime_types_post
+
             if content_type not in bin_supported_mime_types_post:
                 self.error(415)
                 return
@@ -430,8 +471,7 @@ class BinHandler(webapp2.RequestHandler):
             bin.put()
 
             self.response.headers["Location"] = bin.get_url()
-            self.response.set_status(201)
-            self.response.out.write(serialize_bins(bin, accept_header))
+            self.response.set_status(303)
         except AppendrError as e:
             self.response.set_status(e.code)
             self.response.out.write(e.msg)
@@ -511,7 +551,7 @@ class DataHandler(webapp2.RequestHandler):
                     headers=task_headers)
 
             self.response.headers["Location"] = task.get_url()
-            self.response.set_status(202)
+            self.response.set_status(303)
         except AppendrError as e:
             self.response.set_status(e.code)
             self.response.out.write(e.msg)
@@ -606,7 +646,7 @@ class TaskStatusHandler(webapp2.RequestHandler):
 
         self.response.headers['Content-Type'] = accept_header
         self.response.set_status(200)
-        self.response.out.write(serialize_tasks(task, accept_header))
+        self.response.out.write(serialize_tasks(task, bin, accept_header))
 
 class MainHandler(webapp2.RequestHandler):
     def options(self, bin_key):
@@ -629,9 +669,13 @@ class MainHandler(webapp2.RequestHandler):
             self.error(406)
             return
 
-        resp_content = json.dumps({
-            "bins_url" : webapp2.uri_for('bins', _full=True)
-        }, indent=2)
+        if accept_header in ['text/html']:
+            template = JINJA_ENVIRONMENT.get_template('index.html')
+            resp_content = template.render()
+        else:
+            resp_content = json.dumps({
+                "bins_url" : webapp2.uri_for('bins', _full=True)
+            }, indent=2)
 
         self.response.headers['Content-Type'] = accept_header
         self.response.set_status(200)

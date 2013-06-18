@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block title %}Home{% endblock %}
+{% block head %}
+        <meta name="author" content="Ivan Zuzak" />
+{% endblock %}
+{% block content %}
+          <div class="row">
+            <div class="span3 bs-docs-sidebar">
+              <ul class="nav nav-list bs-docs-sidenav">
+                <li><a href="#intro"><i class="icon-chevron-right"></i> &#x2460; Introduction</a></li>
+               <!--  <li><a href="#features"><i class="icon-chevron-right"></i> &#x2461; Features</a></li>
+                <li><a href="#usage"><i class="icon-chevron-right"></i> &#x2462; Usage</a></li> -->
+                <li><a href="#create"><i class="icon-chevron-right"></i> &#x2461; Create a bin</a></li>
+                <li><a href="#search"><i class="icon-chevron-right"></i> &#x2462; Find your bins</a></li>
+              </ul>
+            </div>
+
+            <div class="span9">
+              <a name="intro"></a>
+              <section>
+                <h2> &#x2460; Introduction </h2>
+                <p>
+                  Appendr is Web service that simplifies automated collection of key-value data.
+                </p>
+                <p>
+                  Appendr itself does not store any data except for the link to an external storage service.
+                  It just wraps the external storage services in order to provide a simple API for timestamping and appending data, which most external services do not provide.
+                  In other words, Appendr is a key-value pair append-only logging utility that uses external services for storage.
+                </p>
+                <p>
+                  Features:
+                  <ul>
+                    <li> CORS support - Appendr may be called cross-domain from a JavaScript script in a browser</li>
+                    <li> Support for concurrent appends - Appendr will correctly handle multiple data appends sent to it at the same time. </li>
+                    <li> Supported external storage services - GitHub Gist</li>
+                    <li> Supported input formats - application/json, application/x-www-form-urlencoded</li>
+                    <li> Supported output formats: application/json, text/csv </li>
+                  </ul>
+                </p>
+                <p>
+                  More instructions coming soon! See project's <a href="https://github.com/izuzak/appendr">GitHub page</a> for now.
+                </p>
+              </section>
+
+              <!-- <section>
+                <h2> &#x2461; Features </h2>
+                <p>
+                  Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod
+                  tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+                  quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo
+                  consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse
+                  cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non
+                  proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+                </p>
+              </section>
+
+              <section>
+                <h2> &#x2462; Usage </h2>
+                <p>
+                  Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod
+                  tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+                  quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo
+                  consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse
+                  cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non
+                  proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+                </p>
+              </section> -->
+
+              <section>
+                <a name="create"></a>
+                <h2> &#x2461; Create a bin </h2>
+
+                <form id="someform" class="form-horizontal" method="post" action="/bins">
+                  <div class="control-group">
+                    <label class="control-label" for="create-backend-storage">External storage</label>
+                    <div class="controls">
+                      <select name="storage_backend" id="create-backend-storage">
+                        <option value="gist">GitHub Gist</option>
+                      </select>
+                      <!-- <span class="help-inline">Inline help text</span> -->
+                    </div>
+                  </div>
+
+                  <div class="control-group">
+                    <label class="control-label" for="create-public-gist">Public Gist?</label>
+                    <div class="controls">
+                      <label class="checkbox">
+                        <input name="is_public" id="create-public-gist" type="checkbox">
+                      <!-- <span class="help-inline">Inline help text</span> -->
+                      </label>
+                    </div>
+                  </div>
+
+                  <div class="control-group">
+                    <label class="control-label" for="create-output-format">Output format</label>
+                    <div class="controls">
+                      <select name="output_format" id="create-output-format">
+                        <option value="json">JSON</option>
+                        <option value="csv">CSV</option>
+                      </select>
+                      <!-- <span class="help-inline">Inline help text</span> -->
+                    </div>
+                  </div>
+
+                  <div class="control-group">
+                    <label class="control-label" for="create-filename">Filename</label>
+                    <div class="controls">
+                      <input name="filename" type="text" id="create-filename" value="data.json">
+                      <!-- <span class="help-inline">Inline help text</span> -->
+                    </div>
+                  </div>
+
+                  <div class="control-group">
+                    <label class="control-label" for="create-token">API token</label>
+                    <div class="controls">
+                      <input name="api_token" type="text" id="create-token">
+                      <!-- <span class="help-inline">Inline help text</span> -->
+                    </div>
+                  </div>
+
+                  <div class="control-group">
+                    <label class="control-label" for="create-datetime-format">Date-time format</label>
+                    <div class="controls">
+                      <input name="datetime_format" type="text" id="create-datetime-format" value="%Y-%m-%dT%H:%M:%SZ">
+                      <!-- <span class="help-inline">Inline help text</span> -->
+                    </div>
+                  </div>
+
+                  <div class="control-group">
+                    <div class="controls">
+                      <button name="" id="create-submit" type="submit" class="btn">Create bin</button>
+                    </div>
+                  </div>
+
+                </form>
+              </section>
+
+              <section>
+                <a name="search"></a>
+                <h2> &#x2462; Find your bins </h2>
+
+                <form id="someform" class="form-horizontal" method="get" action="/bins">
+                  <div class="control-group">
+                    <label class="control-label" for="create-backend-storage">External storage</label>
+                    <div class="controls">
+                      <select name="storage_backend" id="create-backend-storage">
+                        <option value="gist">GitHub Gist</option>
+                      </select>
+                      <!-- <span class="help-inline">Inline help text</span> -->
+                    </div>
+                  </div>
+
+                  <div class="control-group">
+                    <label class="control-label" for="create-token">API token</label>
+                    <div class="controls">
+                      <input name="api_token" type="text" id="create-token">
+                      <!-- <span class="help-inline">Inline help text</span> -->
+                    </div>
+                  </div>
+
+                  <div class="control-group">
+                    <div class="controls">
+                      <button name="" id="create-submit" type="submit" class="btn">Find bins</button>
+                    </div>
+                  </div>
+                </form>
+              </section>
+            </div>
+          </div>
+{% endblock %}
+
+{% block header %}
+        <header class="header-main">
+          <div class="container">
+            <h1 class="title-main">
+              Appendr
+            </h1>
+          </div>
+        </header>
+{% endblock %}
+
+{% block footer %} {{ super() }} {% endblock %}
+
+{% block scripts %}
+        <script type="text/javascript">
+          setTimeout(function () {
+            $('.bs-docs-sidenav').affix({
+              offset: {
+                top: 96,
+                bottom: 0
+              }
+            })
+          }, 100)
+        </script>
+
+        <script type="text/javascript">
+          var _gauges = _gauges || [];
+          (function() {
+            var t   = document.createElement('script');
+            t.type  = 'text/javascript';
+            t.async = true;
+            t.id    = 'gauges-tracker';
+            t.setAttribute('data-site-id', '51a24cc5613f5d2a14000044');
+            t.src = '//secure.gaug.es/track.js';
+            var s = document.getElementsByTagName('script')[0];
+            s.parentNode.insertBefore(t, s);
+          })();
+        </script>
+{% endblock %}

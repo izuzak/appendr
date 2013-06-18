@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Task info{% endblock %}
+{% block content %}
+  <div class="container">
+  <h3> Task info </h3>
+
+  <p>
+    <div class="row">
+      <div class="span2"><b>Task ID:</b></div>
+      <div>{{ tasks.task_id }}</div>
+    </div>
+
+    <div class="row">
+      <div class="span2"><b>Bin ID:</b></div>
+      <div><a href="{{ tasks.bin_url }}">{{ tasks.bin_id }}</a></div>
+    </div>
+
+    <div class="row">
+      <div class="span2"><b>Date created</b>:</div>
+      <div> {{ tasks.date_created }} </div>
+    </div>
+
+    <div class="row">
+      <div class="span2"><b>Date updated</b>:</div>
+      <div> {{ tasks.date_updated }} </div>
+    </div>
+
+    <div class="row">
+      <div class="span2"><b>Status</b>:</div>
+      <div> {{ tasks.status }} </div>
+    </div>
+
+    <div class="row">
+      <div class="span2"><b>Status message</b>:</div>
+      <div> {{ tasks.status_msg }} </div>
+    </div>
+
+  </p>
+
+  </div>
+{% endblock %}
+
+{% block header %}
+            <header class="header-other">
+              <h1 class="title-other">
+                <a href="/">Appendr</a>
+              </h1>
+            </header>
+{% endblock %}
+
+{% block footer %} {{ super() }} {% endblock %}
+
+{% block scripts %}
+        <script type="text/javascript">
+          setTimeout(function () {
+            $('.bs-docs-sidenav').affix({
+              offset: {
+                top: 50,
+                bottom: 0
+              }
+            })
+          }, 100)
+        </script>
+{% endblock %}
