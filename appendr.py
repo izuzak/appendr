@@ -254,7 +254,7 @@ class GistBin(Bin):
             "Authorization": 'token ' + self.api_token
         }
 
-        gist_response = urlfetch.fetch(url=self.get_gist_api_url(), headers=auth_headers)
+        gist_response = urlfetch.fetch(url=self.get_gist_api_url(), headers=auth_headers, deadline=10)
 
         if gist_response.status_code != 200:
             raise AppendrError(gist_response.status_code, "")
@@ -279,7 +279,8 @@ class GistBin(Bin):
         result = urlfetch.fetch(url=self.get_gist_api_url(),
                         payload=new_payload,
                         method=urlfetch.POST,
-                        headers=gist_headers)
+                        headers=gist_headers,
+                        deadline=10)
 
         if result.status_code != 200:
             raise AppendrError(result.status_code, result.content + "\n" + new_payload)
@@ -317,7 +318,8 @@ class GistBin(Bin):
         result = urlfetch.fetch(url=gist_url,
                         payload=gist_payload,
                         method=urlfetch.POST,
-                        headers=gist_headers)
+                        headers=gist_headers,
+                        deadline=10)
 
         if result.status_code != 201:
             raise AppendrError(result.status_code, "")
