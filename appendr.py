@@ -17,9 +17,6 @@ import copy
 import dateutil.parser
 import dateutil.relativedelta
 
-
-print os.path.dirname(__file__)
-
 JINJA_ENVIRONMENT = jinja2.Environment(
     loader=jinja2.FileSystemLoader(os.path.dirname(__file__) + "/web"),
     extensions=['jinja2.ext.autoescape'])
@@ -454,10 +451,6 @@ class BinHandler(webapp2.RequestHandler):
             self.response.headers.add_header("Access-Control-Expose-Headers", "Location")
 
             content_type = self.request.content_type
-
-            print self.request.body
-            print self.request.headers.get("content-type")
-            print bin_supported_mime_types_post
 
             if content_type not in bin_supported_mime_types_post:
                 self.error(415)
