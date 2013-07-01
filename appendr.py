@@ -113,11 +113,13 @@ def serialize_tasks(tasks, bin, content_type):
     if content_type in ['application/json', 'text/plain']:
         return json.dumps(tasks_info, indent=2)
     elif content_type in ['text/html']:
+        bin_info = None
         if isinstance(tasks, Task):
             template = JINJA_ENVIRONMENT.get_template('task.html')
         else:
             template = JINJA_ENVIRONMENT.get_template('tasks.html')
-        return template.render({"tasks" : tasks_info, "bin" : bin.get_info()})
+            bin_info = bin.get_info()
+        return template.render({"tasks" : tasks_info, "bin" : bin_info})
 
 def append_data_(old_content, output_format, datetime_format, params):
     params['date_created'] = params['date_created'].strftime(datetime_format)
@@ -630,6 +632,8 @@ class TaskStatusHandler(webapp2.RequestHandler):
         if not accept_header:
             self.error(406)
             return
+
+        bin = None
 
         if not task_key:
             bin_db_key = db.Key.from_path('Bin', bin_key)
