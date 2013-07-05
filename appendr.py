@@ -646,8 +646,7 @@ class DataHandler(webapp2.RequestHandler):
                 self.error(406)
                 return
 
-            bin_db_key = db.Key.from_path('Bin', bin_name)
-            bin = db.get(bin_db_key)
+            bin = Bin.get_by_key_name(bin_name)
 
             if (bin is None):
                 self.error(404)
@@ -664,8 +663,7 @@ class DataHandler(webapp2.RequestHandler):
         try:
             self.response.headers.add_header('Access-Control-Allow-Origin', '*')
 
-            bin_db_key = db.Key.from_path('Bin', bin_name)
-            bin = db.get(bin_db_key)
+            bin = Bin.get_by_key_name(bin_name)
 
             if (bin is None):
                 self.error(404)
@@ -711,15 +709,13 @@ class DataHandler(webapp2.RequestHandler):
 class AppendHandler(webapp2.RequestHandler):
     def post(self, bin_name):
         task_name = self.request.headers['X-AppEngine-TaskName']
-        task_db_key = db.Key.from_path('Task', task_name)
-        task = db.get(task_db_key)
+        task = Task.get_by_key_name(task_name)
 
         if (task is None):
             return
 
         try:
-            bin_db_key = db.Key.from_path('Bin', bin_name)
-            bin = db.get(bin_db_key)
+            bin = Bin.get_by_key_name(bin_name)
 
             if (bin is None):
                 return
@@ -797,8 +793,7 @@ class TaskStatusHandler(webapp2.RequestHandler):
         bin = None
 
         if not task_name:
-            bin_db_key = db.Key.from_path('Bin', bin_name)
-            bin = db.get(bin_db_key)
+            bin = Bin.get_by_key_name(bin_name)
 
             if (bin is None):
                 self.error(404)
@@ -808,8 +803,7 @@ class TaskStatusHandler(webapp2.RequestHandler):
             task = task.order('-date_created').fetch(None)
 
         else:
-            task_db_key = db.Key.from_path('Task', task_name)
-            task = db.get(task_db_key)
+            task = Task.get_by_key_name(task_name)
 
             if (task is None):
                 self.error(404)
