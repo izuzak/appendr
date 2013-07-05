@@ -2,48 +2,88 @@ queue:
 - name: queue0
   rate: 500/s
   bucket_size: 10
+  retry_parameters:
+    min_backoff_seconds: 10
+    max_backoff_seconds: 3600
+    max_doublings: 9
 
 - name: queue1
   rate: 500/s
   bucket_size: 10
   max_concurrent_requests: 1
+  retry_parameters:
+    min_backoff_seconds: 10
+    max_backoff_seconds: 3600
+    max_doublings: 9
 
 - name: queue2
   rate: 500/s
   bucket_size: 10
   max_concurrent_requests: 1
+  retry_parameters:
+    min_backoff_seconds: 10
+    max_backoff_seconds: 3600
+    max_doublings: 9
 
 - name: queue3
   rate: 500/s
   bucket_size: 10
   max_concurrent_requests: 1
+  retry_parameters:
+    min_backoff_seconds: 10
+    max_backoff_seconds: 3600
+    max_doublings: 9
 
 - name: queue4
   rate: 500/s
   bucket_size: 10
   max_concurrent_requests: 1
+  retry_parameters:
+    min_backoff_seconds: 10
+    max_backoff_seconds: 3600
+    max_doublings: 9
 
 - name: queue5
   rate: 500/s
   bucket_size: 10
   max_concurrent_requests: 1
+  retry_parameters:
+    min_backoff_seconds: 10
+    max_backoff_seconds: 3600
+    max_doublings: 9
 
 - name: queue6
   rate: 500/s
   bucket_size: 10
   max_concurrent_requests: 1
+  retry_parameters:
+    min_backoff_seconds: 10
+    max_backoff_seconds: 3600
+    max_doublings: 9
 
 - name: queue7
   rate: 500/s
   bucket_size: 10
   max_concurrent_requests: 1
+  retry_parameters:
+    min_backoff_seconds: 10
+    max_backoff_seconds: 3600
+    max_doublings: 9
 
 - name: queue8
   rate: 500/s
   bucket_size: 10
   max_concurrent_requests: 1
+  retry_parameters:
+    min_backoff_seconds: 10
+    max_backoff_seconds: 3600
+    max_doublings: 9
 
 - name: queue9
   rate: 500/s
   bucket_size: 10
   max_concurrent_requests: 1
+  retry_parameters:
+    min_backoff_seconds: 10
+    max_backoff_seconds: 3600
+    max_doublings: 9

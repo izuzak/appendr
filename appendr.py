@@ -119,6 +119,15 @@ ROUTE_NAME_TASK_STATUS_CLEANUP = 'task_status_cleanup'
 TASK_CLEANUP_MAX_AGE = 24
 BIN_CLEANUP_MAX_AGE = 24*40
 
+# How long for will a task be retried before giving up
+TASK_RETRY_HOURS = 24*2
+
+# Task status messages
+TASK_STATUS_QUEUED = 'queued'
+TASK_STATUS_COMPLETED = 'completed'
+TASK_STATUS_RETRYING = 'retrying'
+TASK_STATUS_FAILED = 'failed'
+
 # Error messages
 ERROR_MSG_NON_EMPTY_STRING_PARAM = ('Invalid value for parameter %s: %s. '
                                     'Parameter must be a non-empty string.')
@@ -429,8 +438,7 @@ class GistBin(Bin):
                                 validate_certificate=URLFETCH_VALIDATE_CERTS)
 
         if result.status_code != 200:
-            raise AppendrError(result.status_code,
-                               result.content + '\n' + new_payload)
+            raise AppendrError(result.status_code, result.content)
 
     def initialize(self, bin_name, params):
         if 'is_public' in params:
@@ -495,7 +503,7 @@ class GistBin(Bin):
 class Task(db.Model):
     bin = db.ReferenceProperty(Bin)
     status = db.StringProperty()
-    status_msg = db.StringProperty()
+    status_msg = db.StringProperty(multiline=True)
     date_created = db.DateTimeProperty(auto_now_add=True)
     date_updated = db.DateTimeProperty(auto_now_add=True)
 
@@ -685,7 +693,7 @@ class DataHandler(webapp2.RequestHandler):
 
             task = Task(key_name=task_name)
             task.bin = bin
-            task.status = 'queued'
+            task.status = TASK_STATUS_QUEUED
             task.status_msg = ''
             task.put()
 
@@ -730,15 +738,28 @@ class AppendHandler(webapp2.RequestHandler):
             bin.put()
 
             task.date_updated = datetime.utcnow()
-            task.status = 'completed'
+            task.status = TASK_STATUS_COMPLETED
+            task.status_msg = ''
             task.put()
 
         except Exception as e:
+            relativedelta = dateutil.relativedelta.relativedelta
             task.date_updated = datetime.utcnow()
-            task.status = 'failed'
-            task.status_msg = str(e)
+            fail_count = self.request.headers['X-AppEngine-TaskExecutionCount']
+            task.status_msg = ('Fail count: %s. Last error: %s' % \
+                                (int(fail_count)+1, str(e)))[0:500]
+
+            date_limit = task.date_created + \
+                relativedelta(hours = TASK_RETRY_HOURS)
+
+            if task.date_updated < date_limit:
+                task.status = TASK_STATUS_RETRYING
+                self.response.set_status(500)
+            else:
+                task.status = TASK_STATUS_FAILED
+                self.response.set_status(200)
+
             task.put()
-            return
 
 ################################################################################
 # Task handler for cleaning up unused bins
