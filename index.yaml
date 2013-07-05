@@ -2,7 +2,8 @@ indexes:
 
 - kind: Bin
   properties:
-  - name: api_token
+  - name: storage_backend
+  - name: storage_user_id
   - name: date_created
     direction: desc
 

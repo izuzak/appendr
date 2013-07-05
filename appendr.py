@@ -271,6 +271,7 @@ class Bin(polymodel.PolyModel):
     date_updated = db.DateTimeProperty(auto_now_add=True)
     output_format = db.StringProperty()
     storage_backend = db.StringProperty()
+    storage_user_id = db.IntegerProperty()
 
     def get_url(self):
         return webapp2.uri_for(ROUTE_NAME_BIN,
@@ -340,6 +341,11 @@ class Bin(polymodel.PolyModel):
             return template.render({'bins' : bins_info})
 
     @classmethod
+    def get_user_id_for_token(cls, storage_backend, api_token):
+        if storage_backend == STORAGE_BACKEND_GIST:
+            return GistBin.get_user_id_for_token(api_token)
+
+    @classmethod
     def create(cls, params):
         validate_input_param(params, 'storage_backend', False,
                              SUPPORTED_STORAGE_BACKENDS.keys(),
@@ -396,6 +402,23 @@ class GistBin(Bin):
         bin_info['gist_api_url'] = self.get_gist_api_url()
 
         return bin_info
+
+    @classmethod
+    def get_user_id_for_token(cls, api_token):
+        auth_headers = {
+            'Authorization': 'token ' + api_token
+        }
+
+        response = urlfetch.fetch(
+                            url='https://api.github.com/user',
+                            headers=auth_headers,
+                            deadline=URLFETCH_DEADLINE,
+                            validate_certificate=URLFETCH_VALIDATE_CERTS)
+
+        if response.status_code != 200:
+            raise AppendrError(response.status_code, response.content)
+        else:
+            return json.loads(response.content)['id']
 
     def append_data(self, params):
         auth_headers = {
@@ -495,6 +518,7 @@ class GistBin(Bin):
         self.gist_id = json_content['id']
         self.api_token = params['api_token']
         self.filename = params['filename']
+        self.storage_user_id = json_content['user']['id']
 
 ################################################################################
 # Task model
@@ -588,13 +612,21 @@ class BinHandler(webapp2.RequestHandler):
                 return
 
             api_token = self.request.params.get('api_token', None)
+            storage_backend = self.request.params.get('storage_backend', None)
 
             if 'api_token' is None:
                 self.error(400)
                 return
 
+            if 'storage_backend' is None:
+                self.error(400)
+                return
+
+            user_id = Bin.get_user_id_for_token(storage_backend, api_token)
+
             self.response.headers['Content-Type'] = accept_header
-            bins = Bin.all().filter('api_token =', api_token)
+            bins = Bin.all().filter('storage_backend =', storage_backend)
+            bins = bins.filter('storage_user_id =', user_id)
             bins = bins.order('-date_created').fetch(None)
             self.response.out.write(Bin.serialize(bins, accept_header))
         except AppendrError as e:
