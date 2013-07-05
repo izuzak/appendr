@@ -5,3 +5,9 @@ indexes:
   - name: api_token
   - name: date_created
     direction: desc
+
+- kind: Task
+  properties:
+  - name: bin
+  - name: date_created
+    direction: desc

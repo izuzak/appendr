@@ -85,7 +85,7 @@
                     <label class="control-label" for="create-public-gist">Public Gist?</label>
                     <div class="controls">
                       <label class="checkbox">
-                        <input name="is_public" id="create-public-gist" type="checkbox">
+                        <input name="is_public" id="create-public-gist" type="checkbox" value="true">
                       <!-- <span class="help-inline">Inline help text</span> -->
                       </label>
                     </div>
@@ -95,8 +95,8 @@
                     <label class="control-label" for="create-output-format">Output format</label>
                     <div class="controls">
                       <select name="output_format" id="create-output-format">
-                        <option value="json">JSON</option>
-                        <option value="csv">CSV</option>
+                        <option value="application/json">JSON</option>
+                        <option value="text/csv">CSV</option>
                       </select>
                       <!-- <span class="help-inline">Inline help text</span> -->
                     </div>
@@ -111,17 +111,9 @@
                   </div>
 
                   <div class="control-group">
-                    <label class="control-label" for="create-token">API token</label>
+                    <label class="control-label" for="create-token">OAuth API token</label>
                     <div class="controls">
                       <input name="api_token" type="text" id="create-token">
-                      <!-- <span class="help-inline">Inline help text</span> -->
-                    </div>
-                  </div>
-
-                  <div class="control-group">
-                    <label class="control-label" for="create-datetime-format">Date-time format</label>
-                    <div class="controls">
-                      <input name="datetime_format" type="text" id="create-datetime-format" value="%Y-%m-%dT%H:%M:%SZ">
                       <!-- <span class="help-inline">Inline help text</span> -->
                     </div>
                   </div>

@@ -16,40 +16,143 @@ import mimeparse
 import copy
 import dateutil.parser
 import dateutil.relativedelta
+import logging
 
+################################################################################
+# Config parameters and constants
+################################################################################
+
+# Is debugging enabled?
+DEBUG = True
+
+if DEBUG:
+  logging.getLogger().setLevel(logging.DEBUG)
+
+# How long should user agents cache OAuth access control OPTIONS, in seconds
+OAUTH_ACCESS_CONTROL_MAX_AGE = 60*60*24*30 # 30 days
+
+# How many task queues exist for queuing append tasks
+NUMBER_OF_APPEND_TASK_QUEUES = 10
+APPEND_TASK_QUEUES_PREFIX = 'queue'
+
+# Jinja environment global variable
 JINJA_ENVIRONMENT = jinja2.Environment(
-    loader=jinja2.FileSystemLoader(os.path.dirname(__file__) + "/web"),
+    loader=jinja2.FileSystemLoader(os.path.dirname(__file__) + '/web'),
     extensions=['jinja2.ext.autoescape'])
 
-#
-# HELPERS
-#
+# MIME type
+MIME_TYPE_JSON = 'application/json'
+MIME_TYPE_FORM = 'application/x-www-form-urlencoded'
+MIME_TYPE_TEXT = 'text/plain'
+MIME_TYPE_HTML = 'text/html'
+MIME_TYPE_CSV = 'text/csv'
 
-class AppendrError(Exception):
-    def __init__(self, code, msg):
-        Exception.__init__(self, msg)
-        self.code = code
-        self.msg = msg
+# HTML Template names
+TEMPLATE_BASE = 'base.html'
+TEMPLATE_INDEX = 'index.html'
+TEMPLATE_BINS = 'bins.html'
+TEMPLATE_BIN = 'bin.html'
+TEMPLATE_TASKS = 'tasks.html'
+TEMPLATE_TASK = 'task.html'
 
-def get_best_mime_match_or_default(accept_header, available_types, default=None):
+# CSV and JSON serialization params
+CSV_DELIMITER = ';'
+CSV_QUOTECHAR = '"'
+JSON_INDENT = 2
+
+# urlfetch params
+URLFETCH_DEADLINE = 10
+URLFETCH_VALIDATE_CERTS = True
+
+# Length of Bin and Task ids
+BIN_NAME_LENGTH = 20
+TASK_NAME_LENGTH = 20
+
+# Storage backends
+STORAGE_BACKEND_GIST = 'gist'
+SUPPORTED_STORAGE_BACKENDS = {
+    STORAGE_BACKEND_GIST : 0
+}
+DEFAULT_STORAGE_BACKEND = STORAGE_BACKEND_GIST
+
+# Default format for serializing date and time
+DEFAULT_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%SZ'
+
+# Supported output formats for external service and default values
+# (because gists don't support empty files)
+SUPPORTED_OUTPUT_EXTERNAL_DATA_MIME_TYPES = [MIME_TYPE_JSON, MIME_TYPE_CSV]
+DEFAULT_OUTPUT_EXTERNAL_DATA_MIME_TYPE = MIME_TYPE_JSON
+OUTPUT_FORMATS_EMPTY_DATA = {
+    MIME_TYPE_JSON : '[]\n',
+    MIME_TYPE_CSV : 'date_created\n'
+}
+
+# Supported output formats for appendr application
+SUPPORTED_OUTPUT_APPENDR_MIME_TYPES = [MIME_TYPE_HTML,
+                                       MIME_TYPE_TEXT,
+                                       MIME_TYPE_JSON]
+DEFAULT_OUTPUT_APPENDR_MIME_TYPE = MIME_TYPE_JSON
+
+# Supported input mime types
+SUPPORTED_INPUT_PARAMS_MIME_TYPES = [MIME_TYPE_FORM, MIME_TYPE_JSON]
+SUPPORTED_APPEND_DATA_MIME_TYPES = [MIME_TYPE_FORM, MIME_TYPE_JSON]
+
+# Default filename into which data will be stored
+DEFAULT_FILENAME = 'data.%s'
+
+# Default message that will be set in the Gist description if the backend
+# is Gist
+DEFAULT_GIST_MESSAGE = ('Gist created automatically by appendr.appspot.com. '
+                       'Data filename is: %s')
+
+# Route names
+ROUTE_NAME_INDEX = 'main'
+ROUTE_NAME_BIN = 'bin'
+ROUTE_NAME_BINS = 'bins'
+ROUTE_NAME_TASKS = 'tasks'
+ROUTE_NAME_TASK_STATUS = 'task_status'
+ROUTE_NAME_TASK_APPEND = 'task_append'
+ROUTE_NAME_TASK_BIN_CLEANUP = 'task_bin_cleanup'
+ROUTE_NAME_TASK_STATUS_CLEANUP = 'task_status_cleanup'
+
+# How long must tasks and bins be unused before they can be removed, in hours
+TASK_CLEANUP_MAX_AGE = 24
+BIN_CLEANUP_MAX_AGE = 24*40
+
+# Error messages
+ERROR_MSG_NON_EMPTY_STRING_PARAM = ('Invalid value for parameter %s: %s. '
+                                    'Parameter must be a non-empty string.')
+ERROR_MSG_ELEMENT_OF_SET = ('Invalid value for parameter %s: %s. '
+                            'Parameter must be one of: %s.')
+ERROR_MSG_DEFINED = 'Parameter %s must be defined.'
+
+################################################################################
+# Helper functions
+################################################################################
+
+# Gets the best mime type match for the accept header,
+# or uses a default mime type
+def get_best_mime_match_or_default(accept_header, allowed_types, default=None):
     if accept_header is None:
         return default
     else:
-        return mimeparse.best_match(available_types, accept_header)
+        return mimeparse.best_match(allowed_types, accept_header)
 
+# Input params validation helpers
 def validate_non_empty_string(name, value):
-    if not (isinstance(value, basestring) and value != ""):
-        raise ValueError("Invalid value for parameter %r: %r. Parameter should be a non-empty string." % (name, value))
+    if not (isinstance(value, basestring) and value != ''):
+        raise ValueError(ERROR_MSG_NON_EMPTY_STRING_PARAM % (name, value))
 
-def validate_element_of_list(name, value, possible_values):
-    if value not in possible_values:
-        raise ValueError("Invalid value for parameter %r: %r. Parameter should be one of: %r." % (name, value, possible_values))
+def validate_element_of_list(name, value, allowed_values):
+    if value not in allowed_values:
+        raise ValueError(ERROR_MSG_ELEMENT_OF_SET %
+                         (name, value, allowed_values))
 
 def validate_input_param(params, name, must_exist, validation_object, default):
     if must_exist and name not in params:
-        raise ValueError("Parameter %r must be defined." % (name))
+        raise ValueError(ERROR_MSG_DEFINED % (name,))
 
-    if name in params:
+    if (name in params) and (params[name] != ''):
         if isfunction(validation_object):
             validation_object(name, params[name])
         elif isinstance(validation_object, list):
@@ -59,6 +162,22 @@ def validate_input_param(params, name, must_exist, validation_object, default):
 
     return params
 
+# Get a dictionary of params passed in the HTTP request
+def get_request_params(req, content_type):
+    if content_type == MIME_TYPE_FORM:
+        return dict(req.params.copy())
+    elif content_type == MIME_TYPE_JSON:
+        return json.loads(req.body)
+    else:
+        # will never happen since we catch this before
+        raise AppendrError(400, 'Invalid content type.')
+
+# Get the name of the task queue which has append tasks for a specific bin
+def get_queue_name_for_bin(bin_name):
+    queue_num = sum([ord(ch) for ch in bin_name]) % NUMBER_OF_APPEND_TASK_QUEUES
+    return APPEND_TASK_QUEUES_PREFIX + str(queue_num)
+
+# Gets the sorted keys of a dictionary, with the creation date key in 1st place
 def get_data_csv_key_list(params):
     keys = params.keys()
     keys.remove('date_created')
@@ -66,106 +185,93 @@ def get_data_csv_key_list(params):
     keys.insert(0, 'date_created')
     return keys
 
-def get_request_params(req, content_type):
-  if content_type == 'application/x-www-form-urlencoded':
-      return dict(req.params.copy())
-  elif content_type == 'application/json':
-      return json.loads(req.body)
+# Gets a list of dict values sorted by the order of keys in another list
+def get_dict_values_sorted(params, keys):
+    return [params[key] for key in keys]
 
-def get_values_sorted(keys, params):
-  data = []
-  for key in keys:
-      data.append(params[key])
-  return data
+# Appends a dict of key-value data to an existing CSV document
+def append_data_csv(old_content, params):
+    key_list = get_data_csv_key_list(params)
 
-def serialize_bins(bins, content_type):
-    bins_info = None
+    output = cStringIO.StringIO()
+    csv_writer = csv.writer(
+        output,
+        delimiter=CSV_DELIMITER,
+        quotechar=CSV_QUOTECHAR,
+        quoting=csv.QUOTE_MINIMAL)
 
-    if isinstance(bins, Bin):
-        bins_info = bins.get_info()
+    if old_content == OUTPUT_FORMATS_EMPTY_DATA[MIME_TYPE_CSV]:
+        csv_writer.writerow(key_list)
+
+    data = get_dict_values_sorted(params, key_list)
+    csv_writer.writerow(data)
+
+    if old_content == OUTPUT_FORMATS_EMPTY_DATA[MIME_TYPE_CSV]:
+        return output.getvalue()
     else:
-        bins_info = []
-        for bin in bins:
-            bins_info.append(bin.get_info())
+        return old_content+output.getvalue()
 
-    if content_type in ['application/json', 'text/plain']:
-        return json.dumps(bins_info, indent=2)
-    elif content_type in ['text/html']:
-        if isinstance(bins, Bin):
-            template = JINJA_ENVIRONMENT.get_template('bin.html')
-        else:
-            template = JINJA_ENVIRONMENT.get_template('bins.html')
-        return template.render({"bins" : bins_info})
+# Appends a dict of key-value data to an existing JSON document
+def append_data_json(old_content, params):
+    json_data = json.loads(old_content)
+    json_data.append(params)
+    return json.dumps(json_data, indent=JSON_INDENT)
 
-def serialize_tasks(tasks, bin, content_type):
-    tasks_info = None
+# Appends a dict of key-value data to an existing document
+def append_data(old_content, output_format, params):
+    params['date_created'] = \
+        params['date_created'].strftime(DEFAULT_DATETIME_FORMAT)
 
-    if isinstance(tasks, Task):
-        tasks_info = tasks.get_info()
+    if output_format == MIME_TYPE_CSV:
+        return append_data_csv(old_content, params)
+
+    elif output_format == MIME_TYPE_JSON:
+        return append_data_json(old_content, params)
+
     else:
-        tasks_info = []
-        for task in tasks:
-            tasks_info.append(task.get_info())
+        # will never happen since we catch this before
+        raise AppendrError(400, 'Invalid output format.')
 
-    if content_type in ['application/json', 'text/plain']:
-        return json.dumps(tasks_info, indent=2)
-    elif content_type in ['text/html']:
-        bin_info = None
-        if isinstance(tasks, Task):
-            template = JINJA_ENVIRONMENT.get_template('task.html')
-        else:
-            template = JINJA_ENVIRONMENT.get_template('tasks.html')
-            bin_info = bin.get_info()
-        return template.render({"tasks" : tasks_info, "bin" : bin_info})
+# Response for HTTP OPTIONS request which basically just sends OAuth headers
+def setHTTPOptionsResponse(response,
+                           oauth_origin='*',
+                           oauth_methods=['GET'],
+                           oauth_headers=['Content-Type']):
+    headers = response.headers
+    headers.add_header('Access-Control-Allow-Origin', oauth_origin)
+    headers.add_header('Access-Control-Allow-Methods', ', '.join(oauth_methods))
+    headers.add_header('Access-Control-Allow-Headers', ', '.join(oauth_headers))
+    headers.add_header('Access-Control-Max-Age', OAUTH_ACCESS_CONTROL_MAX_AGE)
+    headers.add_header('Allow', ', '.join(['OPTIONS'] + oauth_methods))
+    response.set_status(200)
 
-def append_data_(old_content, output_format, datetime_format, params):
-    params['date_created'] = params['date_created'].strftime(datetime_format)
+# Custom error class. Temporary here until I figure out how to use GAE http
+# exceptions and error handling
+class AppendrError(Exception):
+    def __init__(self, code, msg):
+        Exception.__init__(self, msg)
+        self.code = code
+        self.msg = msg
 
-    if output_format == 'csv':
-        key_list = get_data_csv_key_list(params)
-
-        output = cStringIO.StringIO()
-        csv_writer = csv.writer(output, delimiter=';', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-
-        if old_content == output_data_formats_empty_string['csv']:
-            csv_writer.writerow(key_list)
-
-        data = get_values_sorted(key_list, params)
-        csv_writer.writerow(data)
-
-        if old_content == output_data_formats_empty_string['csv']:
-            return output.getvalue()
-        else:
-            return old_content+output.getvalue()
-
-    elif output_format =='json':
-        json_data = json.loads(old_content)
-        json_data.append(params)
-        return json.dumps(json_data, indent=2)
-
-def compute_queue_number_from_bin_id(bin_id, num_queues):
-    queue_num = 0
-    for ch in bin_id:
-        queue_num = (queue_num + ord(ch)) % num_queues
-
-    return "queue" + str(queue_num)
-
-#
-# MODELS
-#
+################################################################################
+# Base Bin model
+################################################################################
 
 class Bin(polymodel.PolyModel):
     date_created = db.DateTimeProperty(auto_now_add=True)
     date_updated = db.DateTimeProperty(auto_now_add=True)
     output_format = db.StringProperty()
-    datetime_format = db.StringProperty()
     storage_backend = db.StringProperty()
 
     def get_url(self):
-        return webapp2.uri_for('bin', bin_key=self.key().name(), _full=True)
+        return webapp2.uri_for(ROUTE_NAME_BIN,
+                               bin_name=self.key().name(),
+                               _full=True)
 
     def get_tasks_url(self):
-        return webapp2.uri_for('tasks', bin_key=self.key().name(), _full=True)
+        return webapp2.uri_for(ROUTE_NAME_TASKS,
+                               bin_name=self.key().name(),
+                               _full=True)
 
     def get_raw_content_url(self):
         return None
@@ -174,25 +280,29 @@ class Bin(polymodel.PolyModel):
         return None
 
     def get_info(self):
+        bin_tasks = Task.all().filter('bin =', self.key())
+        bin_tasks = bin_tasks.order('-date_created').fetch(None)
+
         return {
-          "bin_id" : self.key().name(),
-          "bin_url" : self.get_url(),
-          "date_created" : self.date_created.strftime(self.datetime_format),
-          "date_updated" : self.date_updated.strftime(self.datetime_format),
-          "output_format" : self.output_format,
-          "datetime_format" : self.datetime_format,
-          "storage_backend" : self.storage_backend,
-          "content_raw_url" : self.get_raw_content_url(),
-          "content_html_url" : self.get_html_content_url(),
-          "tasks_url" : self.get_tasks_url(),
-          "tasks" : [task.get_info() for task in self.task_set]
+          'bin_id' : self.key().name(),
+          'bin_url' : self.get_url(),
+          'date_created' : self.date_created.strftime(DEFAULT_DATETIME_FORMAT),
+          'date_updated' : self.date_updated.strftime(DEFAULT_DATETIME_FORMAT),
+          'output_format' : self.output_format,
+          'datetime_format' : DEFAULT_DATETIME_FORMAT,
+          'storage_backend' : self.storage_backend,
+          'content_raw_url' : self.get_raw_content_url(),
+          'content_html_url' : self.get_html_content_url(),
+          'tasks_url' : self.get_tasks_url(),
+          'tasks' : [task.get_info() for task in bin_tasks]
         }
 
     @classmethod
     def generate_name(cls):
         bin_name = None
         while True:
-            bin_name = webapp2_extras.security.generate_random_string(20)
+            bin_name = \
+                webapp2_extras.security.generate_random_string(BIN_NAME_LENGTH)
 
             bin = Bin.get_by_key_name(bin_name)
             if bin is None:
@@ -201,21 +311,50 @@ class Bin(polymodel.PolyModel):
         return bin_name
 
     @classmethod
-    def create(cls, params):
-        validate_input_param(params, 'storage_backend', False, storage_backends.keys(), 'gist')
-        validate_input_param(params, 'output_format', False, output_data_formats, 'json')
-        validate_input_param(params, 'datetime_format', False, validate_non_empty_string, '%Y-%m-%dT%H:%M:%SZ')
+    def serialize(cls, bins, content_type):
+        bins_info = None
 
-        bin_class = storage_backends[params['storage_backend']]
+        if isinstance(bins, Bin):
+            bins_info = bins.get_info()
+        else:
+            bins_info = []
+            for bin in bins:
+                bins_info.append(bin.get_info())
+
+        if content_type in [MIME_TYPE_JSON, MIME_TYPE_TEXT]:
+            return json.dumps(bins_info, indent=JSON_INDENT)
+        elif content_type in [MIME_TYPE_HTML]:
+            if isinstance(bins, Bin):
+                template = JINJA_ENVIRONMENT.get_template(TEMPLATE_BIN)
+            else:
+                template = JINJA_ENVIRONMENT.get_template(TEMPLATE_BINS)
+            return template.render({'bins' : bins_info})
+
+    @classmethod
+    def create(cls, params):
+        validate_input_param(params, 'storage_backend', False,
+                             SUPPORTED_STORAGE_BACKENDS.keys(),
+                             DEFAULT_STORAGE_BACKEND)
+
+        validate_input_param(params, 'output_format', False,
+                             SUPPORTED_OUTPUT_EXTERNAL_DATA_MIME_TYPES,
+                             DEFAULT_OUTPUT_EXTERNAL_DATA_MIME_TYPE)
+
         bin_name = Bin.generate_name()
-        bin = bin_class(key_name=bin_name)
+        bin = None
+
+        if params['storage_backend'] == STORAGE_BACKEND_GIST:
+            bin = GistBin(key_name=bin_name)
 
         bin.output_format = params['output_format']
-        bin.datetime_format = params['datetime_format']
         bin.storage_backend = params['storage_backend']
         bin.initialize(bin_name, params)
 
         return bin
+
+################################################################################
+# GistBin model
+################################################################################
 
 class GistBin(Bin):
     is_public = db.BooleanProperty()
@@ -224,13 +363,14 @@ class GistBin(Bin):
     filename = db.StringProperty()
 
     def get_gist_html_url(self):
-        return "https://gist.github.com/" + self.gist_id
+        return 'https://gist.github.com/' + self.gist_id
 
     def get_gist_api_url(self):
-        return "https://api.github.com/gists/" + self.gist_id
+        return 'https://api.github.com/gists/' + self.gist_id
 
     def get_gist_raw_url(self):
-        return "https://gist.github.com/raw/" + self.gist_id + "/" + self.filename
+        return 'https://gist.github.com/raw/' + self.gist_id + \
+                '/' + self.filename
 
     def get_raw_content_url(self):
         return self.get_gist_raw_url()
@@ -250,80 +390,96 @@ class GistBin(Bin):
 
     def append_data(self, params):
         auth_headers = {
-            "Authorization": 'token ' + self.api_token
+            'Authorization': 'token ' + self.api_token
         }
 
-        gist_response = urlfetch.fetch(url=self.get_gist_api_url(), headers=auth_headers, deadline=10, validate_certificate=True)
+        gist_response = urlfetch.fetch(
+                            url=self.get_gist_api_url(),
+                            headers=auth_headers,
+                            deadline=URLFETCH_DEADLINE,
+                            validate_certificate=URLFETCH_VALIDATE_CERTS)
 
         if gist_response.status_code != 200:
-            raise AppendrError(gist_response.status_code, "")
+            raise AppendrError(gist_response.status_code, '')
 
         json_gist = json.loads(gist_response.content)
 
-        new_content = append_data_(json_gist['files'][self.filename]['content'], self.output_format, self.datetime_format, params)
+        new_content = append_data(json_gist['files'][self.filename]['content'],
+                                  self.output_format,
+                                  params)
 
         new_payload = json.dumps({
-            "files" : {
+            'files' : {
                 self.filename : {
-                    "content" : new_content
+                    'content' : new_content
                 }
             }
         })
 
         gist_headers = {
-            'Content-Type': 'application/json',
-            "Authorization": 'token ' + self.api_token
+            'Content-Type': MIME_TYPE_JSON,
+            'Authorization': 'token ' + self.api_token
         }
 
         result = urlfetch.fetch(url=self.get_gist_api_url(),
-                        payload=new_payload,
-                        method=urlfetch.POST,
-                        headers=gist_headers,
-                        deadline=10,
-                        validate_certificate=True)
+                                payload=new_payload,
+                                method=urlfetch.POST,
+                                headers=gist_headers,
+                                deadline=URLFETCH_DEADLINE,
+                                validate_certificate=URLFETCH_VALIDATE_CERTS)
 
         if result.status_code != 200:
-            raise AppendrError(result.status_code, result.content + "\n" + new_payload)
+            raise AppendrError(result.status_code,
+                               result.content + '\n' + new_payload)
 
     def initialize(self, bin_name, params):
         if 'is_public' in params:
-            if params['is_public'] == "true":
+            if params['is_public'] == 'true':
                 params['is_public'] = True
-            elif params['is_public'] == "false":
+            elif params['is_public'] == 'false':
                 params['is_public'] = False
 
-        validate_input_param(params, 'is_public', False, [True, False], False)
-        validate_input_param(params, 'api_token', True, validate_non_empty_string, False)
-        validate_input_param(params, 'filename', False, validate_non_empty_string, 'data.' + params['output_format'])
+        validate_input_param(params, 'is_public', False,
+                             [True, False],
+                             False)
 
-        gist_url = "https://api.github.com/gists"
+        validate_input_param(params, 'api_token', True,
+                             validate_non_empty_string,
+                             False)
+
+        validate_input_param(params, 'filename', False,
+                             validate_non_empty_string,
+                             DEFAULT_FILENAME % \
+                                 (params['output_format'].split('/')[-1],))
+
+        gist_url = 'https://api.github.com/gists'
 
         gist_headers = {
-            'Content-Type': 'application/json',
-            "Authorization": 'token ' + params['api_token']
+            'Content-Type': MIME_TYPE_JSON,
+            'Authorization': 'token ' + params['api_token']
         }
 
-        empty_data_string = output_data_formats_empty_string[params['output_format']]
+        empty_data_string = OUTPUT_FORMATS_EMPTY_DATA[params['output_format']]
 
         gist_payload = json.dumps({
-            "description" : "Gist created automatically by appendr.appspot.com. Data filename is: " + params['filename'],
-            "public" : params['is_public'],
-            "files" : {
-                params["filename"] : {
-                    "content" : empty_data_string
+            'description' : DEFAULT_GIST_MESSAGE % (params['filename'],),
+            'public' : params['is_public'],
+            'files' : {
+                params['filename'] : {
+                    'content' : empty_data_string
                 }
             }
         })
 
         result = urlfetch.fetch(url=gist_url,
-                        payload=gist_payload,
-                        method=urlfetch.POST,
-                        headers=gist_headers,
-                        deadline=10,
-                        validate_certificate=True)
+                                payload=gist_payload,
+                                method=urlfetch.POST,
+                                headers=gist_headers,
+                                deadline=URLFETCH_DEADLINE,
+                                validate_certificate=URLFETCH_VALIDATE_CERTS)
 
         if result.status_code != 201:
-            raise AppendrError(result.status_code, "")
+            raise AppendrError(result.status_code, '')
 
         json_content = json.loads(result.content)
 
@@ -332,6 +488,9 @@ class GistBin(Bin):
         self.api_token = params['api_token']
         self.filename = params['filename']
 
+################################################################################
+# Task model
+################################################################################
 
 class Task(db.Model):
     bin = db.ReferenceProperty(Bin)
@@ -344,7 +503,8 @@ class Task(db.Model):
     def generate_name(cls):
         task_name = None
         while True:
-            task_name = webapp2_extras.security.generate_random_string(20)
+            task_name = \
+                webapp2_extras.security.generate_random_string(TASK_NAME_LENGTH)
 
             task = Task.get_by_key_name(task_name)
             if task is None:
@@ -352,81 +512,68 @@ class Task(db.Model):
 
         return task_name
 
+    @classmethod
+    def serialize(cls, tasks, bin, content_type):
+        tasks_info = None
+
+        if isinstance(tasks, Task):
+            tasks_info = tasks.get_info()
+        else:
+            tasks_info = []
+            for task in tasks:
+                tasks_info.append(task.get_info())
+
+        if content_type in [MIME_TYPE_JSON, MIME_TYPE_TEXT]:
+            return json.dumps(tasks_info, indent=JSON_INDENT)
+        elif content_type in [MIME_TYPE_HTML]:
+            bin_info = None
+            if isinstance(tasks, Task):
+                template = JINJA_ENVIRONMENT.get_template(TEMPLATE_TASK)
+            else:
+                template = JINJA_ENVIRONMENT.get_template(TEMPLATE_TASKS)
+                bin_info = bin.get_info()
+            return template.render({'tasks' : tasks_info, 'bin' : bin_info})
+
     def get_url(self):
-        return webapp2.uri_for('task_status', bin_key=self.bin.key().name(), task_key=self.key().name(), _full=True)
+        return webapp2.uri_for(ROUTE_NAME_TASK_STATUS,
+                               bin_name=self.bin.key().name(),
+                               task_name=self.key().name(),
+                               _full=True)
 
     def get_info(self):
         return {
-          "task_id" : self.key().name(),
-          "task_url" : self.get_url(),
-          "tasks_url" : self.bin.get_tasks_url(),
-          "bin_id" : self.bin.key().name(),
-          "bin_url" : self.bin.get_url(),
-          "date_created" : self.date_created.strftime('%Y-%m-%dT%H:%M:%SZ'),
-          "date_updated" : self.date_updated.strftime('%Y-%m-%dT%H:%M:%SZ'),
-          "status" : self.status,
-          "status_msg" : self.status_msg
+          'task_id' : self.key().name(),
+          'task_url' : self.get_url(),
+          'tasks_url' : self.bin.get_tasks_url(),
+          'bin_id' : self.bin.key().name(),
+          'bin_url' : self.bin.get_url(),
+          'date_created' : self.date_created.strftime(DEFAULT_DATETIME_FORMAT),
+          'date_updated' : self.date_updated.strftime(DEFAULT_DATETIME_FORMAT),
+          'status' : self.status,
+          'status_msg' : self.status_msg
         }
 
-#
-# STORAGE BACKENDS
-#
+################################################################################
+# Handlers
+################################################################################
 
-storage_backends = {
-    'gist' : GistBin
-}
-
-#
-# OUTPUT FORMATS
-#
-
-output_data_formats = ['json', 'csv']
-output_data_formats_empty_string = {
-    'json' : '[]\n',
-    'csv' : 'date_created\n'
-}
-
-#
-# Bin list format
-#
-
-bins_supported_mime_types = ['text/html', 'text/plain', 'application/json']
-bins_default_mime_type = 'application/json'
-
-tasks_supported_mime_types = ['text/html', 'text/plain', 'application/json']
-tasks_default_mime_type = 'application/json'
-
-main_supported_mime_types = ['text/html', 'text/plain', 'application/json']
-main_default_mime_type = 'application/json'
-
-#
-# Accepted data formats
-#
-
-bin_supported_mime_types_post = ['application/x-www-form-urlencoded', 'application/json']
-bin_data_supported_mime_types_post = ['application/x-www-form-urlencoded', 'application/json']
-
-#
-# HANDLERS
-#
+################################################################################
+# Handler for bin creation and bin search requests
+################################################################################
 
 class BinHandler(webapp2.RequestHandler):
     def options(self):
-        self.response.headers.add_header("Access-Control-Allow-Origin", "*")
-        self.response.headers.add_header("Access-Control-Allow-Methods", "GET, POST")
-        self.response.headers.add_header("Access-Control-Allow-Headers", "Content-Type")
-        self.response.headers.add_header("Access-Control-Max-Age", str(60*60*24*30))
-        self.response.headers.add_header("Allow", "OPTIONS, GET, POST")
-        self.response.set_status(200)
+        setHTTPOptionsResponse(response=self.response,
+                               oauth_methods=['GET', 'POST'])
 
     def get(self):
         try:
-            self.response.headers.add_header("Access-Control-Allow-Origin", "*")
+            self.response.headers.add_header('Access-Control-Allow-Origin', '*')
 
             accept_header = get_best_mime_match_or_default(
                 self.request.headers['Accept'],
-                bins_supported_mime_types,
-                bins_default_mime_type)
+                SUPPORTED_OUTPUT_APPENDR_MIME_TYPES,
+                DEFAULT_OUTPUT_APPENDR_MIME_TYPE)
 
             if not accept_header:
                 self.error(406)
@@ -439,27 +586,29 @@ class BinHandler(webapp2.RequestHandler):
                 return
 
             self.response.headers['Content-Type'] = accept_header
-            bins = Bin.all().filter("api_token =", api_token).order("-date_created").fetch(None)
-            self.response.out.write(serialize_bins(bins, accept_header))
+            bins = Bin.all().filter('api_token =', api_token)
+            bins = bins.order('-date_created').fetch(None)
+            self.response.out.write(Bin.serialize(bins, accept_header))
         except AppendrError as e:
             self.response.set_status(e.code)
             self.response.out.write(e.msg)
 
     def post(self):
         try:
-            self.response.headers.add_header("Access-Control-Allow-Origin", "*")
-            self.response.headers.add_header("Access-Control-Expose-Headers", "Location")
+            self.response.headers.add_header('Access-Control-Allow-Origin', '*')
+            self.response.headers.add_header('Access-Control-Expose-Headers',
+                                             'Location')
 
             content_type = self.request.content_type
 
-            if content_type not in bin_supported_mime_types_post:
+            if content_type not in SUPPORTED_APPEND_DATA_MIME_TYPES:
                 self.error(415)
                 return
 
             accept_header = get_best_mime_match_or_default(
                 self.request.headers['Accept'],
-                bins_supported_mime_types,
-                bins_default_mime_type)
+                SUPPORTED_OUTPUT_APPENDR_MIME_TYPES,
+                DEFAULT_OUTPUT_APPENDR_MIME_TYPE)
 
             if not accept_header:
                 self.error(406)
@@ -469,35 +618,35 @@ class BinHandler(webapp2.RequestHandler):
             bin = Bin.create(params)
             bin.put()
 
-            self.response.headers["Location"] = bin.get_url()
+            self.response.headers['Location'] = bin.get_url()
             self.response.set_status(303)
         except AppendrError as e:
             self.response.set_status(e.code)
             self.response.out.write(e.msg)
 
-class DataHandler(webapp2.RequestHandler):
-    def options(self, bin_key):
-        self.response.headers.add_header("Access-Control-Allow-Origin", "*")
-        self.response.headers.add_header("Access-Control-Allow-Methods", "GET, POST")
-        self.response.headers.add_header("Access-Control-Allow-Headers", "Content-Type")
-        self.response.headers.add_header("Access-Control-Max-Age", str(60*60*24*30))
-        self.response.headers.add_header("Allow", "OPTIONS, GET, POST")
-        self.response.set_status(200)
+################################################################################
+# Handler for requests to a specific bin
+################################################################################
 
-    def get(self, bin_key):
+class DataHandler(webapp2.RequestHandler):
+    def options(self, bin_name):
+        setHTTPOptionsResponse(response=self.response,
+                               oauth_methods=['GET', 'POST'])
+
+    def get(self, bin_name):
         try:
-            self.response.headers.add_header("Access-Control-Allow-Origin", "*")
+            self.response.headers.add_header('Access-Control-Allow-Origin', '*')
 
             accept_header = get_best_mime_match_or_default(
                 self.request.headers['Accept'],
-                bins_supported_mime_types,
-                bins_default_mime_type)
+                SUPPORTED_OUTPUT_APPENDR_MIME_TYPES,
+                DEFAULT_OUTPUT_APPENDR_MIME_TYPE)
 
             if not accept_header:
                 self.error(406)
                 return
 
-            bin_db_key = db.Key.from_path('Bin', bin_key)
+            bin_db_key = db.Key.from_path('Bin', bin_name)
             bin = db.get(bin_db_key)
 
             if (bin is None):
@@ -506,16 +655,16 @@ class DataHandler(webapp2.RequestHandler):
 
             self.response.headers['Content-Type'] = accept_header
             self.response.set_status(200)
-            self.response.out.write(serialize_bins(bin, accept_header))
+            self.response.out.write(Bin.serialize(bin, accept_header))
         except AppendrError as e:
             self.response.set_status(e.code)
             self.response.out.write(e.msg)
 
-    def post(self, bin_key):
+    def post(self, bin_name):
         try:
-            self.response.headers.add_header("Access-Control-Allow-Origin", "*")
+            self.response.headers.add_header('Access-Control-Allow-Origin', '*')
 
-            bin_db_key = db.Key.from_path('Bin', bin_key)
+            bin_db_key = db.Key.from_path('Bin', bin_name)
             bin = db.get(bin_db_key)
 
             if (bin is None):
@@ -524,103 +673,122 @@ class DataHandler(webapp2.RequestHandler):
 
             content_type = self.request.content_type
 
-            if content_type not in bin_data_supported_mime_types_post:
+            if content_type not in SUPPORTED_APPEND_DATA_MIME_TYPES:
                 self.error(415)
                 return
 
             params = get_request_params(self.request, content_type)
             params['date_created'] = str(datetime.utcnow())
             task_body = json.dumps(params)
-            task_headers = {'Content-Type' : 'application/json'}
+            task_headers = {'Content-Type' : MIME_TYPE_JSON}
 
-            queue_name = compute_queue_number_from_bin_id(bin_key, 10)
+            queue_name = get_queue_name_for_bin(bin_name)
             task_name = Task.generate_name()
 
             task = Task(key_name=task_name)
             task.bin = bin
-            task.status = "queued"
-            task.status_msg = ""
+            task.status = 'queued'
+            task.status_msg = ''
             task.put()
 
-            taskqueue.add(
-                    url=webapp2.uri_for('task_append', bin_key=bin_key),
-                    queue_name=queue_name,
-                    name=task_name,
-                    payload=task_body,
-                    headers=task_headers)
+            taskqueue.add(url=webapp2.uri_for(ROUTE_NAME_TASK_APPEND,
+                          bin_name=bin_name),
+                          queue_name=queue_name,
+                          name=task_name,
+                          payload=task_body,
+                          headers=task_headers)
 
-            self.response.headers["Location"] = task.get_url()
+            self.response.headers['Location'] = task.get_url()
             self.response.set_status(303)
         except AppendrError as e:
             self.response.set_status(e.code)
             self.response.out.write(e.msg)
 
+################################################################################
+# Task handler for appending data to a bin
+################################################################################
+
 class AppendHandler(webapp2.RequestHandler):
-    def post(self, bin_key):
-        task_key = self.request.headers["X-AppEngine-TaskName"]
-        task_db_key = db.Key.from_path('Task', task_key)
+    def post(self, bin_name):
+        task_name = self.request.headers['X-AppEngine-TaskName']
+        task_db_key = db.Key.from_path('Task', task_name)
         task = db.get(task_db_key)
 
         if (task is None):
             return
 
         try:
-            bin_db_key = db.Key.from_path('Bin', bin_key)
+            bin_db_key = db.Key.from_path('Bin', bin_name)
             bin = db.get(bin_db_key)
 
             if (bin is None):
                 return
 
             params = get_request_params(self.request, self.request.content_type)
-            params['date_created'] = dateutil.parser.parse(params['date_created'])
+
+            params['date_created'] = \
+                dateutil.parser.parse(params['date_created'])
 
             bin.date_updated = params['date_created']
             bin.append_data(params)
             bin.put()
 
             task.date_updated = datetime.utcnow()
-            task.status = "completed"
+            task.status = 'completed'
             task.put()
 
         except Exception as e:
             task.date_updated = datetime.utcnow()
-            task.status = "failed"
+            task.status = 'failed'
             task.status_msg = str(e)
             task.put()
             return
 
+################################################################################
+# Task handler for cleaning up unused bins
+################################################################################
+
 class BinCleanupHandler(webapp2.RequestHandler):
     def get(self):
-        date_last_update = datetime.utcnow() + dateutil.relativedelta.relativedelta(days = -40)
-        unused_bins = Bin.all().order("-date_updated").filter("date_updated <", date_last_update).fetch(None)
+        relativedelta = dateutil.relativedelta.relativedelta
+        date_last_update = datetime.utcnow()
+        date_last_update += relativedelta(hours = -1 * BIN_CLEANUP_MAX_AGE)
+        unused_bins = Bin.all().order('-date_updated').filter(
+            'date_updated <', date_last_update).fetch(None)
 
         for bin in unused_bins:
             bin.delete()
 
+################################################################################
+# Task handler for cleaning up finished tasks
+################################################################################
+
 class TaskStatusCleanupHandler(webapp2.RequestHandler):
     def get(self):
-        date_last_update = datetime.utcnow() + dateutil.relativedelta.relativedelta(hours = -24)
-        unchecked_tasks = Task.all().order("-date_updated").filter("date_updated <", date_last_update).fetch(None)
+        relativedelta = dateutil.relativedelta.relativedelta
+        date_last_update = datetime.utcnow()
+        date_last_update += relativedelta(hours = -1 * TASK_CLEANUP_MAX_AGE)
+        unchecked_tasks = Task.all().order('-date_updated').filter(
+            'date_updated <', date_last_update).fetch(None)
 
         for task in unchecked_tasks:
             task.delete()
 
-class TaskStatusHandler(webapp2.RequestHandler):
-    def options(self, bin_key):
-        self.response.headers.add_header("Access-Control-Allow-Origin", "*")
-        self.response.headers.add_header("Access-Control-Allow-Methods", "GET")
-        self.response.headers.add_header("Access-Control-Allow-Headers", "Content-Type")
-        self.response.headers.add_header("Access-Control-Max-Age", str(60*60*24*30))
-        self.response.headers.add_header("Allow", "OPTIONS, GET")
-        self.response.set_status(200)
+################################################################################
+# Handler for status requests of a specific task
+################################################################################
 
-    def get(self, bin_key, task_key):
-        self.response.headers.add_header("Access-Control-Allow-Origin", "*")
+class TaskStatusHandler(webapp2.RequestHandler):
+    def options(self, bin_name):
+        setHTTPOptionsResponse(response=self.response)
+
+    def get(self, bin_name, task_name):
+        self.response.headers.add_header('Access-Control-Allow-Origin', '*')
 
         accept_header = get_best_mime_match_or_default(
                 self.request.headers['Accept'],
-                tasks_supported_mime_types,
-                tasks_default_mime_type)
+                SUPPORTED_OUTPUT_APPENDR_MIME_TYPES,
+                DEFAULT_OUTPUT_APPENDR_MIME_TYPE)
 
         if not accept_header:
             self.error(406)
@@ -628,17 +796,19 @@ class TaskStatusHandler(webapp2.RequestHandler):
 
         bin = None
 
-        if not task_key:
-            bin_db_key = db.Key.from_path('Bin', bin_key)
+        if not task_name:
+            bin_db_key = db.Key.from_path('Bin', bin_name)
             bin = db.get(bin_db_key)
 
             if (bin is None):
                 self.error(404)
                 return
 
-            task = bin.task_set
+            task = Task.all().filter('bin =', bin_db_key)
+            task = task.order('-date_created').fetch(None)
+
         else:
-            task_db_key = db.Key.from_path('Task', task_key)
+            task_db_key = db.Key.from_path('Task', task_name)
             task = db.get(task_db_key)
 
             if (task is None):
@@ -647,48 +817,76 @@ class TaskStatusHandler(webapp2.RequestHandler):
 
         self.response.headers['Content-Type'] = accept_header
         self.response.set_status(200)
-        self.response.out.write(serialize_tasks(task, bin, accept_header))
+        self.response.out.write(Task.serialize(task, bin, accept_header))
+
+################################################################################
+# Handler for the main page and root API endpoint
+################################################################################
 
 class MainHandler(webapp2.RequestHandler):
-    def options(self, bin_key):
-        self.response.headers.add_header("Access-Control-Allow-Origin", "*")
-        self.response.headers.add_header("Access-Control-Allow-Methods", "GET")
-        self.response.headers.add_header("Access-Control-Allow-Headers", "Content-Type")
-        self.response.headers.add_header("Access-Control-Max-Age", str(60*60*24*30))
-        self.response.headers.add_header("Allow", "OPTIONS, GET")
-        self.response.set_status(200)
+    def options(self, bin_name):
+        setHTTPOptionsResponse(response=self.response)
 
     def get(self):
-        self.response.headers.add_header("Access-Control-Allow-Origin", "*")
+        self.response.headers.add_header('Access-Control-Allow-Origin', '*')
 
         accept_header = get_best_mime_match_or_default(
                 self.request.headers['Accept'],
-                main_supported_mime_types,
-                main_default_mime_type)
+                SUPPORTED_OUTPUT_APPENDR_MIME_TYPES,
+                DEFAULT_OUTPUT_APPENDR_MIME_TYPE)
 
         if not accept_header:
             self.error(406)
             return
 
-        if accept_header in ['text/html']:
-            template = JINJA_ENVIRONMENT.get_template('index.html')
+        if accept_header in [MIME_TYPE_HTML]:
+            template = JINJA_ENVIRONMENT.get_template(TEMPLATE_INDEX)
             resp_content = template.render()
         else:
             resp_content = json.dumps({
-                "bins_url" : webapp2.uri_for('bins', _full=True)
-            }, indent=2)
+                'bins_url' : webapp2.uri_for(ROUTE_NAME_BINS, _full=True)
+            }, indent=JSON_INDENT)
 
         self.response.headers['Content-Type'] = accept_header
         self.response.set_status(200)
         self.response.out.write(resp_content)
 
+
+################################################################################
+# WSGI application and routes
+################################################################################
+
 app = webapp2.WSGIApplication([
-    webapp2.Route('/', handler=MainHandler, name="main"),
-    webapp2.Route('/bins', handler=BinHandler, name="bins"),
-    webapp2.Route('/bins/<bin_key:\w+>', handler=DataHandler, name="bin"),
-    webapp2.Route('/bins/<bin_key:\w+>/tasks', handler=TaskStatusHandler, defaults={"task_key" : None}, name="tasks"),
-    webapp2.Route('/bins/<bin_key:\w+>/tasks/<task_key:\w*>', handler=TaskStatusHandler, name="task_status"),
-    webapp2.Route('/tasks/append/<bin_key:\w+>', handler=AppendHandler, name="task_append"),
-    webapp2.Route('/tasks/cleanup_bins', handler=BinCleanupHandler, name="task_bin_cleanup"),
-    webapp2.Route('/tasks/cleanup_taskstatus', handler=TaskStatusCleanupHandler, name="task_status_cleanup")
-], debug=True)
+    webapp2.Route('/',
+                  handler=MainHandler,
+                  name=ROUTE_NAME_INDEX),
+
+    webapp2.Route('/bins',
+                  handler=BinHandler,
+                  name=ROUTE_NAME_BINS),
+
+    webapp2.Route('/bins/<bin_name:\w+>',
+                  handler=DataHandler,
+                  name=ROUTE_NAME_BIN),
+
+    webapp2.Route('/bins/<bin_name:\w+>/tasks',
+                  handler=TaskStatusHandler,
+                  defaults={'task_name' : None},
+                  name=ROUTE_NAME_TASKS),
+
+    webapp2.Route('/bins/<bin_name:\w+>/tasks/<task_name:\w*>',
+                  handler=TaskStatusHandler,
+                  name=ROUTE_NAME_TASK_STATUS),
+
+    webapp2.Route('/tasks/append/<bin_name:\w+>',
+                  handler=AppendHandler,
+                  name=ROUTE_NAME_TASK_APPEND),
+
+    webapp2.Route('/tasks/cleanup_bins',
+                  handler=BinCleanupHandler,
+                  name=ROUTE_NAME_TASK_BIN_CLEANUP),
+
+    webapp2.Route('/tasks/cleanup_taskstatus',
+                  handler=TaskStatusCleanupHandler,
+                  name=ROUTE_NAME_TASK_STATUS_CLEANUP)
+], debug=DEBUG)
