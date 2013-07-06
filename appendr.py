@@ -111,6 +111,8 @@ DEFAULT_GIST_MESSAGE = ('Gist created automatically by appendr.appspot.com. '
 # Secret OAuth app info for external services
 OAUTH_GITHUB_CLIENT_ID = appendr_cfg.github_client_id
 OAUTH_GITHUB_CLIENT_SECRET = appendr_cfg.github_client_secret
+OAUTH_DROPBOX_CLIENT_ID = appendr_cfg.dropbox_client_id
+OAUTH_DROPBOX_CLIENT_SECRET = appendr_cfg.dropbox_client_secret
 
 # Route names
 ROUTE_NAME_INDEX = 'main'
@@ -122,6 +124,7 @@ ROUTE_NAME_TASK_APPEND = 'task_append'
 ROUTE_NAME_TASK_BIN_CLEANUP = 'task_bin_cleanup'
 ROUTE_NAME_TASK_STATUS_CLEANUP = 'task_status_cleanup'
 ROUTE_NAME_OAUTH_GITHUB = 'oauth_github'
+ROUTE_NAME_OAUTH_DROPBOX = 'oauth_dropbox'
 
 # How long must tasks and bins be unused before they can be removed, in hours
 TASK_CLEANUP_MAX_AGE = 24
@@ -945,6 +948,46 @@ class OAuthGitHubTokenHandler(webapp2.RequestHandler):
         self.response.out.write(resp_content)
 
 ################################################################################
+# Handler for creating OAuth token for Dropbox backend
+################################################################################
+
+class OAuthDropboxTokenHandler(webapp2.RequestHandler):
+    def get(self):
+        oauth_code = self.request.params.get('code')
+
+        params = {
+            'code' : oauth_code,
+            'grant_type' : 'authorization_code',
+            'client_id' : OAUTH_DROPBOX_CLIENT_ID,
+            'client_secret' : OAUTH_DROPBOX_CLIENT_SECRET,
+            'redirect_uri' : 'https://appendr.appspot.com/oauth_token_dropbox'
+        }
+
+        headers = {
+            'Accept' : MIME_TYPE_JSON,
+            'Content-Type' : MIME_TYPE_FORM
+        }
+
+        payload = urllib.urlencode(params)
+
+        result = urlfetch.fetch(url='https://api.dropbox.com/1/oauth2/token',
+                                payload=payload,
+                                method=urlfetch.POST,
+                                headers=headers,
+                                deadline=URLFETCH_DEADLINE,
+                                validate_certificate=URLFETCH_VALIDATE_CERTS)
+
+        access_token = json.loads(result.content)['access_token']
+        template = JINJA_ENVIRONMENT.get_template(TEMPLATE_OAUTH_TOKEN)
+        resp_content = template.render({
+            'service' : 'Dropbox',
+            'token' : access_token})
+
+        self.response.headers['Content-Type'] = 'text/html'
+        self.response.set_status(200)
+        self.response.out.write(resp_content)
+
+################################################################################
 # WSGI application and routes
 ################################################################################
 
@@ -984,5 +1027,9 @@ app = webapp2.WSGIApplication([
 
     webapp2.Route('/oauth_token_github',
                   handler=OAuthGitHubTokenHandler,
-                  name=ROUTE_NAME_OAUTH_GITHUB)
+                  name=ROUTE_NAME_OAUTH_GITHUB),
+
+    webapp2.Route('/oauth_token_dropbox',
+                  handler=OAuthDropboxTokenHandler,
+                  name=ROUTE_NAME_OAUTH_DROPBOX)
 ], debug=DEBUG)
