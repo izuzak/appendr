@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}OAuth token{% endblock %}
+{% block content %}
+  <div class="container">
+
+  <h3> OAuth API token for {{ service }} </h3>
+
+  <p>
+    This is your <strong> {{ service }} </strong> OAuth API token for Appendr:
+  </p>
+
+  <div class="oauth_token">
+    <div>
+    {{ token }}
+    </div>
+  </div>
+
+  <p>
+    Use the token when creating Appendr bins and searching for bins, either via the Appendr webapp or the API.
+  </p>
+
+  <p>
+    Guard the token with your life or sell it on eBay.
+  </p>
+{% endblock %}
+
+{% block header %}
+          <header class="header-other">
+            <h1 class="title-other">
+              <a href="/">Appendr</a>
+            </h1>
+          </header>
+{% endblock %}
+
+{% block footer %} {{ super() }} {% endblock %}
+
+{% block scripts %}
+        <script type="text/javascript">
+          setTimeout(function () {
+            $('.bs-docs-sidenav').affix({
+              offset: {
+                top: 50,
+                bottom: 0
+              }
+            })
+          }, 100)
+        </script>
+{% endblock %}

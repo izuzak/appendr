@@ -17,6 +17,8 @@ import copy
 import dateutil.parser
 import dateutil.relativedelta
 import logging
+import urllib
+import appendr_cfg
 
 ################################################################################
 # Config parameters and constants
@@ -54,6 +56,7 @@ TEMPLATE_BINS = 'bins.html'
 TEMPLATE_BIN = 'bin.html'
 TEMPLATE_TASKS = 'tasks.html'
 TEMPLATE_TASK = 'task.html'
+TEMPLATE_OAUTH_TOKEN = 'oauth_token.html'
 
 # CSV and JSON serialization params
 CSV_DELIMITER = ';'
@@ -105,6 +108,10 @@ DEFAULT_FILENAME = 'data.%s'
 DEFAULT_GIST_MESSAGE = ('Gist created automatically by appendr.appspot.com. '
                        'Data filename is: %s')
 
+# Secret OAuth app info for external services
+OAUTH_GITHUB_CLIENT_ID = appendr_cfg.github_client_id
+OAUTH_GITHUB_CLIENT_SECRET = appendr_cfg.github_client_secret
+
 # Route names
 ROUTE_NAME_INDEX = 'main'
 ROUTE_NAME_BIN = 'bin'
@@ -114,6 +121,7 @@ ROUTE_NAME_TASK_STATUS = 'task_status'
 ROUTE_NAME_TASK_APPEND = 'task_append'
 ROUTE_NAME_TASK_BIN_CLEANUP = 'task_bin_cleanup'
 ROUTE_NAME_TASK_STATUS_CLEANUP = 'task_status_cleanup'
+ROUTE_NAME_OAUTH_GITHUB = 'oauth_github'
 
 # How long must tasks and bins be unused before they can be removed, in hours
 TASK_CLEANUP_MAX_AGE = 24
@@ -898,6 +906,43 @@ class MainHandler(webapp2.RequestHandler):
         self.response.set_status(200)
         self.response.out.write(resp_content)
 
+################################################################################
+# Handler for creating OAuth token for GitHub Gist backend
+################################################################################
+
+class OAuthGitHubTokenHandler(webapp2.RequestHandler):
+    def get(self):
+        oauth_code = self.request.params.get('code')
+
+        params = {
+            'code' : oauth_code,
+            'client_id' : OAUTH_GITHUB_CLIENT_ID,
+            'client_secret' : OAUTH_GITHUB_CLIENT_SECRET
+        }
+
+        payload = urllib.urlencode(params)
+
+        headers = {
+            'Accept' : MIME_TYPE_JSON,
+            'Content-Type' : MIME_TYPE_FORM
+        }
+
+        result = urlfetch.fetch(url='https://github.com/login/oauth/access_token',
+                                payload=payload,
+                                method=urlfetch.POST,
+                                headers=headers,
+                                deadline=URLFETCH_DEADLINE,
+                                validate_certificate=URLFETCH_VALIDATE_CERTS)
+
+        access_token = json.loads(result.content)['access_token']
+        template = JINJA_ENVIRONMENT.get_template(TEMPLATE_OAUTH_TOKEN)
+        resp_content = template.render({
+            'service' : 'GitHub Gist',
+            'token' : access_token})
+
+        self.response.headers['Content-Type'] = 'text/html'
+        self.response.set_status(200)
+        self.response.out.write(resp_content)
 
 ################################################################################
 # WSGI application and routes
@@ -935,5 +980,9 @@ app = webapp2.WSGIApplication([
 
     webapp2.Route('/tasks/cleanup_taskstatus',
                   handler=TaskStatusCleanupHandler,
-                  name=ROUTE_NAME_TASK_STATUS_CLEANUP)
+                  name=ROUTE_NAME_TASK_STATUS_CLEANUP),
+
+    webapp2.Route('/oauth_token_github',
+                  handler=OAuthGitHubTokenHandler,
+                  name=ROUTE_NAME_OAUTH_GITHUB)
 ], debug=DEBUG)

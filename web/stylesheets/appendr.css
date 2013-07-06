@@ -2,6 +2,21 @@ body {
     background-color: rgb(216, 233, 215);
 }
 
+.oauth_token {
+    text-align: center;
+}
+
+.oauth_token > div {
+    border-color: gray;
+    border-width: 2px;
+    border-style: solid;
+    font-size: 22px;
+    padding: 10px;
+    margin-top: 10px;
+    margin-bottom: 10px;
+    display: inline-block;
+}
+
 .content {
     background-color: white;
     min-height: 200px;
