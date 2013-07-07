@@ -32,7 +32,7 @@
                   <ul>
                     <li> CORS support - Appendr may be called cross-domain from a JavaScript script in a browser</li>
                     <li> Support for concurrent appends - Appendr will correctly handle multiple data appends sent to it at the same time. </li>
-                    <li> Supported external storage services - GitHub Gist</li>
+                    <li> Supported external storage services - GitHub Gist, Dropbox</li>
                     <li> Supported input formats - application/json, application/x-www-form-urlencoded</li>
                     <li> Supported output formats: application/json, text/csv </li>
                   </ul>
@@ -82,13 +82,14 @@
                     <div class="controls">
                       <select name="storage_backend" id="create-backend-storage">
                         <option value="gist">GitHub Gist</option>
+                        <option value="dropbox">Dropbox</option>
                       </select>
                       <!-- <span class="help-inline">Inline help text</span> -->
                     </div>
                   </div>
 
                   <div class="control-group">
-                    <label class="control-label" for="create-public-gist">Public Gist?</label>
+                    <label class="control-label" for="create-public-gist">Public file? (Gist only)</label>
                     <div class="controls">
                       <label class="checkbox">
                         <input name="is_public" id="create-public-gist" type="checkbox" value="true">
@@ -143,6 +144,7 @@
                     <div class="controls">
                       <select name="storage_backend" id="create-backend-storage">
                         <option value="gist">GitHub Gist</option>
+                        <option value="dropbox">Dropbox</option>
                       </select>
                       <!-- <span class="help-inline">Inline help text</span> -->
                     </div>

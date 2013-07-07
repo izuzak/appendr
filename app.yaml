@@ -8,6 +8,9 @@ libraries:
 - name: jinja2
   version: latest
 
+- name: lxml
+  version: latest
+
 handlers:
 - url: /web/stylesheets.*
   static_dir: web/stylesheets

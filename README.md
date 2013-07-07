@@ -48,6 +48,7 @@ Support for concurrent appends
 
 Supported external storage services:
 * [GitHub Gist](https://gist.github.com/)
+* [Dropbox](https://www.dropbox.com/)
 
 Supported input formats:
 * `application/json`

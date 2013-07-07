@@ -18,6 +18,7 @@ import dateutil.parser
 import dateutil.relativedelta
 import logging
 import urllib
+import lxml.html
 import appendr_cfg
 
 ################################################################################
@@ -73,8 +74,10 @@ TASK_NAME_LENGTH = 20
 
 # Storage backends
 STORAGE_BACKEND_GIST = 'gist'
+STORAGE_BACKEND_DROPBOX = 'dropbox'
 SUPPORTED_STORAGE_BACKENDS = {
-    STORAGE_BACKEND_GIST : 0
+    STORAGE_BACKEND_GIST : 0,
+    STORAGE_BACKEND_DROPBOX : 1
 }
 DEFAULT_STORAGE_BACKEND = STORAGE_BACKEND_GIST
 
@@ -355,6 +358,8 @@ class Bin(polymodel.PolyModel):
     def get_user_id_for_token(cls, storage_backend, api_token):
         if storage_backend == STORAGE_BACKEND_GIST:
             return GistBin.get_user_id_for_token(api_token)
+        elif storage_backend == STORAGE_BACKEND_DROPBOX:
+            return DropboxBin.get_user_id_for_token(api_token)
 
     @classmethod
     def create(cls, params):
@@ -371,6 +376,8 @@ class Bin(polymodel.PolyModel):
 
         if params['storage_backend'] == STORAGE_BACKEND_GIST:
             bin = GistBin(key_name=bin_name)
+        elif params['storage_backend'] == STORAGE_BACKEND_DROPBOX:
+            bin = DropboxBin(key_name=bin_name)
 
         bin.output_format = params['output_format']
         bin.storage_backend = params['storage_backend']
@@ -530,6 +537,163 @@ class GistBin(Bin):
         self.api_token = params['api_token']
         self.filename = params['filename']
         self.storage_user_id = json_content['user']['id']
+
+################################################################################
+# DropboxBin model
+################################################################################
+
+class DropboxBin(Bin):
+    api_token = db.StringProperty()
+    filename = db.StringProperty()
+    share_url = db.StringProperty()
+    raw_url = db.StringProperty()
+
+    def get_dropbox_api_url(self):
+        return 'https://api-content.dropbox.com/1/files/sandbox/' + \
+                self.key().name() + '/' + self.filename
+
+    def get_raw_content_url(self):
+        return self.raw_url
+
+    def get_html_content_url(self):
+        return self.share_url
+
+    def get_info(self):
+        bin_info = Bin.get_info(self)
+
+        bin_info['filename'] = self.filename
+
+        return bin_info
+
+    @classmethod
+    def get_user_id_for_token(cls, api_token):
+        auth_headers = {
+            'Authorization': 'Bearer ' + api_token
+        }
+
+        response = urlfetch.fetch(
+                            url='https://api.dropbox.com/1/account/info',
+                            headers=auth_headers,
+                            deadline=URLFETCH_DEADLINE,
+                            validate_certificate=URLFETCH_VALIDATE_CERTS)
+
+        if response.status_code != 200:
+            raise AppendrError(response.status_code, response.content)
+        else:
+            return json.loads(response.content)['uid']
+
+    def append_data(self, params):
+        auth_headers = {
+            'Authorization': 'Bearer ' + self.api_token
+        }
+
+        dropbox_response = urlfetch.fetch(
+                                url=self.get_dropbox_api_url(),
+                                headers=auth_headers,
+                                deadline=URLFETCH_DEADLINE,
+                                validate_certificate=URLFETCH_VALIDATE_CERTS)
+
+        if dropbox_response.status_code != 200:
+            raise AppendrError(dropbox_response.status_code, '')
+
+        old_content = dropbox_response.content
+
+        new_content = append_data(old_content, self.output_format, params)
+
+        headers = {
+            'Content-Type': MIME_TYPE_JSON,
+            'Authorization': 'Bearer ' + self.api_token
+        }
+
+        url = 'https://api-content.dropbox.com/1/files_put/sandbox/' + \
+              self.key().name() + '/' + self.filename
+
+        result = urlfetch.fetch(url=url,
+                                payload=new_content,
+                                method=urlfetch.PUT,
+                                headers=headers,
+                                deadline=URLFETCH_DEADLINE,
+                                validate_certificate=URLFETCH_VALIDATE_CERTS)
+
+        if result.status_code != 200:
+            raise AppendrError(result.status_code, result.content)
+
+    def initialize(self, bin_name, params):
+        validate_input_param(params, 'api_token', True,
+                             validate_non_empty_string,
+                             False)
+
+        validate_input_param(params, 'filename', False,
+                             validate_non_empty_string,
+                             DEFAULT_FILENAME % \
+                                 (params['output_format'].split('/')[-1],))
+
+        url = 'https://api-content.dropbox.com/1/files_put/sandbox/' + \
+              self.key().name() + '/' + params['filename']
+
+        headers = {
+            'Content-Type': MIME_TYPE_JSON,
+            'Authorization': 'Bearer ' + params['api_token']
+        }
+
+        payload = OUTPUT_FORMATS_EMPTY_DATA[params['output_format']]
+
+        result = urlfetch.fetch(url=url,
+                                payload=payload,
+                                method=urlfetch.PUT,
+                                headers=headers,
+                                deadline=URLFETCH_DEADLINE,
+                                validate_certificate=URLFETCH_VALIDATE_CERTS)
+
+        if result.status_code != 200:
+            raise AppendrError(result.status_code, '')
+
+        self.api_token = params['api_token']
+        self.filename = params['filename']
+
+        url = 'https://api.dropbox.com/1/account/info'
+
+        headers = {
+            'Authorization': 'Bearer ' + params['api_token']
+        }
+
+        result = urlfetch.fetch(url=url,
+                                method=urlfetch.GET,
+                                headers=headers,
+                                deadline=URLFETCH_DEADLINE,
+                                validate_certificate=URLFETCH_VALIDATE_CERTS)
+
+        json_content = json.loads(result.content)
+
+        self.storage_user_id = json_content['uid']
+
+        url = 'https://api.dropbox.com/1/shares/sandbox/' + \
+              bin_name + '/' + params['filename']
+
+        headers = {
+            'Authorization': 'Bearer ' + params['api_token']
+        }
+
+        result = urlfetch.fetch(url=url,
+                                headers=headers,
+                                deadline=URLFETCH_DEADLINE,
+                                validate_certificate=URLFETCH_VALIDATE_CERTS)
+
+        json_content = json.loads(result.content)
+        self.share_url = json_content['url']
+
+        url = json_content['url']
+
+        result = urlfetch.fetch(url=url,
+                                deadline=URLFETCH_DEADLINE,
+                                validate_certificate=URLFETCH_VALIDATE_CERTS)
+
+        self.share_url = result.final_url
+
+        html = result.content
+        root = lxml.html.fromstring(html)
+        a = root.xpath("//a[@id='download_button_link']")
+        self.raw_url = a[0].attrib['href'][:-5]
 
 ################################################################################
 # Task model
