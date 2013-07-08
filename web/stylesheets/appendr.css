@@ -2,6 +2,13 @@ body {
     background-color: rgb(216, 233, 215);
 }
 
+pre {
+    overflow-x: auto;
+    overflow-wrap: normal;
+    white-space: pre;
+    font-family: 'Consolas', 'Deja Vu Sans Mono', 'Bitstream Vera Sans Mono', monospace
+}
+
 .oauth_token {
     text-align: center;
 }

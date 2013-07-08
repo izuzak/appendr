@@ -2,6 +2,9 @@ import webapp2
 import webapp2_extras.routes
 import webapp2_extras.security
 import jinja2
+from webob.exc import *
+from google.appengine.runtime import apiproxy_errors
+from google.appengine.runtime import DeadlineExceededError
 from google.appengine.api import urlfetch
 from google.appengine.api import taskqueue
 from google.appengine.ext import db
@@ -20,6 +23,7 @@ import logging
 import urllib
 import appendr_cfg
 import re
+import traceback
 
 ################################################################################
 # Config parameters and constants
@@ -58,6 +62,7 @@ TEMPLATE_BIN = 'bin.html'
 TEMPLATE_TASKS = 'tasks.html'
 TEMPLATE_TASK = 'task.html'
 TEMPLATE_OAUTH_TOKEN = 'oauth_token.html'
+TEMPLATE_ERROR = 'error.html'
 
 # CSV and JSON serialization params
 CSV_DELIMITER = ';'
@@ -104,12 +109,12 @@ SUPPORTED_INPUT_PARAMS_MIME_TYPES = [MIME_TYPE_FORM, MIME_TYPE_JSON]
 SUPPORTED_APPEND_DATA_MIME_TYPES = [MIME_TYPE_FORM, MIME_TYPE_JSON]
 
 # Default filename into which data will be stored
-DEFAULT_FILENAME = 'data.%s'
+DEFAULT_FILENAME = 'appendr_data.%s'
 
 # Default message that will be set in the Gist description if the backend
 # is Gist
-DEFAULT_GIST_MESSAGE = ('Gist created automatically by appendr.appspot.com. '
-                       'Data filename is: %s')
+DEFAULT_GIST_MESSAGE = ('Gist created automatically by Appendr '
+                        '(appendr.appspot.com). Data filename is: %s')
 
 # Secret OAuth app info for external services
 OAUTH_GITHUB_CLIENT_ID = appendr_cfg.github_client_id
@@ -151,6 +156,9 @@ ERROR_MSG_NON_EMPTY_STRING_PARAM = ('Invalid value for parameter %s: %s. '
 ERROR_MSG_ELEMENT_OF_SET = ('Invalid value for parameter %s: %s. '
                             'Parameter must be one of: %s.')
 ERROR_MSG_DEFINED = 'Parameter %s must be defined.'
+ERROR_MSG_NOT_ACCEPTABLE = ('The application can not return response in the '
+                           'requested mime type. Accept header was: %s. '
+                           'Acceptable mime types are: %s.')
 
 ################################################################################
 # Helper functions
@@ -162,23 +170,30 @@ def get_best_mime_match_or_default(accept_header, allowed_types, default=None):
     if accept_header is None:
         return default
     else:
-        return mimeparse.best_match(allowed_types, accept_header)
+        match = mimeparse.best_match(allowed_types, accept_header)
+
+        if match is None:
+            raise HTTPNotAcceptable(ERROR_MSG_NOT_ACCEPTABLE % \
+                  (accept_header, allowed_types))
+        else:
+            return match
 
 # Input params validation helpers
 def validate_non_empty_string(name, value):
     if not (isinstance(value, basestring) and value != ''):
-        raise ValueError(ERROR_MSG_NON_EMPTY_STRING_PARAM % (name, value))
+        raise HTTPClientError(ERROR_MSG_NON_EMPTY_STRING_PARAM % (name, value))
 
 def validate_element_of_list(name, value, allowed_values):
     if value not in allowed_values:
-        raise ValueError(ERROR_MSG_ELEMENT_OF_SET %
+        raise HTTPClientError(ERROR_MSG_ELEMENT_OF_SET %
                          (name, value, allowed_values))
 
 def validate_input_param(params, name, must_exist, validation_object, default):
     if must_exist and name not in params:
-        raise ValueError(ERROR_MSG_DEFINED % (name,))
+        raise HTTPClientError(ERROR_MSG_DEFINED % (name,))
 
-    if (name in params) and (params[name] != ''):
+    elif (must_exist and name in params) or \
+         (not must_exist and name in params and params[name] != ''):
         if isfunction(validation_object):
             validation_object(name, params[name])
         elif isinstance(validation_object, list):
@@ -195,8 +210,8 @@ def get_request_params(req, content_type):
     elif content_type == MIME_TYPE_JSON:
         return json.loads(req.body)
     else:
-        # will never happen since we catch this before
-        raise AppendrError(400, 'Invalid content type.')
+        raise HTTPUnsupportedMediaType('Unsupported body mime type: ' + \
+                                        content_type)
 
 # Get the name of the task queue which has append tasks for a specific bin
 def get_queue_name_for_bin(bin_name):
@@ -255,8 +270,8 @@ def append_data(old_content, output_format, params):
         return append_data_json(old_content, params)
 
     else:
-        # will never happen since we catch this before
-        raise AppendrError(400, 'Invalid output format.')
+        # will actually never happen since we catch this before
+        raise HTTPServerError('Invalid output format: %s' % (output_format),)
 
 # Response for HTTP OPTIONS request which basically just sends OAuth headers
 def setHTTPOptionsResponse(response,
@@ -271,13 +286,62 @@ def setHTTPOptionsResponse(response,
     headers.add_header('Allow', ', '.join(['OPTIONS'] + oauth_methods))
     response.set_status(200)
 
-# Custom error class. Temporary here until I figure out how to use GAE http
-# exceptions and error handling
-class AppendrError(Exception):
-    def __init__(self, code, msg):
-        Exception.__init__(self, msg)
-        self.code = code
-        self.msg = msg
+# Extracts request/response information for error handling
+def extractHTTPerrorInfo(request, response, exception):
+    info = dict()
+
+    info['url'] = request.url
+    info['method'] = request.method
+    info['body'] = request.body
+    info['headers'] = dict(request.headers)
+    info['response_code'] = exception.code
+    info['response_title'] = exception.title
+    info['details'] = str(exception)
+    info['stack_trace'] = traceback.format_exc()
+
+    return info
+
+# Serialization of errors based on acceptable media type
+def serialize_error(mime_type, error_info):
+    if mime_type == MIME_TYPE_HTML:
+        template = JINJA_ENVIRONMENT.get_template(TEMPLATE_ERROR)
+        return template.render(error_info)
+
+    elif mime_type in [MIME_TYPE_JSON, MIME_TYPE_TEXT]:
+        return json.dumps(error_info)
+
+    else:
+        # should never happen because it is detected earlier
+        raise HTTPNotAcceptable(ERROR_MSG_NOT_ACCEPTABLE % \
+                  (accept_header, allowed_types))
+
+# Handler for all exception thrown by Appendr
+def handle_error(request, response, exception):
+    accept_header = None
+    try:
+        accept_header = get_best_mime_match_or_default(
+                request.headers['Accept'],
+                SUPPORTED_OUTPUT_APPENDR_MIME_TYPES,
+                DEFAULT_OUTPUT_APPENDR_MIME_TYPE)
+    except HTTPNotAcceptable as e:
+        accept_header = MIME_TYPE_HTML
+
+    if isinstance(exception, apiproxy_errors.OverQuotaError):
+        pass
+
+    elif isinstance(exception, DeadlineExceededError):
+        pass
+
+    if not isinstance(exception, webapp2.HTTPException):
+        exception = HTTPInternalServerError(detail=str(exception))
+
+    error_info = extractHTTPerrorInfo(request, response, exception)
+    content = serialize_error(accept_header, error_info)
+
+    response.set_status(exception.code)
+    response.headers['Content-Type'] = accept_header
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.out.write(content)
 
 ################################################################################
 # Base Bin model
@@ -363,6 +427,10 @@ class Bin(polymodel.PolyModel):
             return GistBin.get_user_id_for_token(api_token)
         elif storage_backend == STORAGE_BACKEND_DROPBOX:
             return DropboxBin.get_user_id_for_token(api_token)
+        else:
+            # should never happen since detected earlier
+            raise HTTPClientError('Unsupported storage service: ' + \
+                                  storage_backend)
 
     @classmethod
     def create(cls, params):
@@ -381,6 +449,10 @@ class Bin(polymodel.PolyModel):
             bin = GistBin(key_name=bin_name)
         elif params['storage_backend'] == STORAGE_BACKEND_DROPBOX:
             bin = DropboxBin(key_name=bin_name)
+        else:
+            # should never happen since detected earlier
+            raise HTTPClientError('Unsupported storage service: ' + \
+                                  storage_backend)
 
         bin.output_format = params['output_format']
         bin.storage_backend = params['storage_backend']
@@ -398,21 +470,15 @@ class GistBin(Bin):
     api_token = db.StringProperty()
     filename = db.StringProperty()
 
-    def get_gist_html_url(self):
-        return 'https://gist.github.com/' + self.gist_id
-
     def get_gist_api_url(self):
         return 'https://api.github.com/gists/' + self.gist_id
 
-    def get_gist_raw_url(self):
+    def get_raw_content_url(self):
         return 'https://gist.github.com/raw/' + self.gist_id + \
                 '/' + self.filename
 
-    def get_raw_content_url(self):
-        return self.get_gist_raw_url()
-
     def get_html_content_url(self):
-        return self.get_gist_html_url()
+        return 'https://gist.github.com/' + self.gist_id
 
     def get_info(self):
         bin_info = Bin.get_info(self)
@@ -437,7 +503,8 @@ class GistBin(Bin):
                             validate_certificate=URLFETCH_VALIDATE_CERTS)
 
         if response.status_code != 200:
-            raise AppendrError(response.status_code, response.content)
+            raise status_map[response.status_code](\
+                'Error while calling GitHub API.\n' + response.content)
         else:
             return json.loads(response.content)['id']
 
@@ -453,7 +520,8 @@ class GistBin(Bin):
                             validate_certificate=URLFETCH_VALIDATE_CERTS)
 
         if gist_response.status_code != 200:
-            raise AppendrError(gist_response.status_code, '')
+            raise status_map[gist_response.status_code](\
+                'Error while calling GitHub API.\n' + response.content)
 
         json_gist = json.loads(gist_response.content)
 
@@ -482,7 +550,8 @@ class GistBin(Bin):
                                 validate_certificate=URLFETCH_VALIDATE_CERTS)
 
         if result.status_code != 200:
-            raise AppendrError(result.status_code, result.content)
+            raise status_map[result.status_code](\
+                'Error while calling GitHub API. \n' + response.content)
 
     def initialize(self, bin_name, params):
         if 'is_public' in params:
@@ -531,7 +600,8 @@ class GistBin(Bin):
                                 validate_certificate=URLFETCH_VALIDATE_CERTS)
 
         if result.status_code != 201:
-            raise AppendrError(result.status_code, '')
+            raise status_map[result.status_code](\
+                'Error while calling GitHub API. ' + result.content)
 
         json_content = json.loads(result.content)
 
@@ -555,14 +625,15 @@ class DropboxBin(Bin):
                 self.key().name() + '/' + self.filename
 
     def get_raw_content_url(self):
-        return 'https://dl.dropboxusercontent.com/s/' + self.dropbox_id + '/' + self.filename
+        return 'https://dl.dropboxusercontent.com/s/' + \
+                self.dropbox_id + '/' + self.filename
 
     def get_html_content_url(self):
-        return 'https://www.dropbox.com/s/' + self.dropbox_id + '/' + self.filename
+        return 'https://www.dropbox.com/s/' + \
+                self.dropbox_id + '/' + self.filename
 
     def get_info(self):
         bin_info = Bin.get_info(self)
-
         bin_info['filename'] = self.filename
 
         return bin_info
@@ -580,7 +651,8 @@ class DropboxBin(Bin):
                             validate_certificate=URLFETCH_VALIDATE_CERTS)
 
         if response.status_code != 200:
-            raise AppendrError(response.status_code, response.content)
+            raise status_map[response.status_code](\
+                'Error while calling Dropbox API. \n' + response.content)
         else:
             return json.loads(response.content)['uid']
 
@@ -596,10 +668,10 @@ class DropboxBin(Bin):
                                 validate_certificate=URLFETCH_VALIDATE_CERTS)
 
         if dropbox_response.status_code != 200:
-            raise AppendrError(dropbox_response.status_code, '')
+            raise status_map[dropbox_response.status_code](\
+                'Error while calling Dropbox API.\n' + dropbox_response.content)
 
         old_content = dropbox_response.content
-
         new_content = append_data(old_content, self.output_format, params)
 
         headers = {
@@ -618,7 +690,8 @@ class DropboxBin(Bin):
                                 validate_certificate=URLFETCH_VALIDATE_CERTS)
 
         if result.status_code != 200:
-            raise AppendrError(result.status_code, result.content)
+            raise status_map[result.status_code](\
+                'Error while calling Dropbox API. \n' + result.content)
 
     def initialize(self, bin_name, params):
         validate_input_param(params, 'api_token', True,
@@ -648,7 +721,8 @@ class DropboxBin(Bin):
                                 validate_certificate=URLFETCH_VALIDATE_CERTS)
 
         if result.status_code != 200:
-            raise AppendrError(result.status_code, '')
+            raise status_map[result.status_code](\
+                'Error while calling Dropbox API. \n' + result.content)
 
         self.api_token = params['api_token']
         self.filename = params['filename']
@@ -665,8 +739,11 @@ class DropboxBin(Bin):
                                 deadline=URLFETCH_DEADLINE,
                                 validate_certificate=URLFETCH_VALIDATE_CERTS)
 
-        json_content = json.loads(result.content)
+        if result.status_code != 200:
+            raise status_map[result.status_code](\
+                'Error while calling Dropbox API. \n' + result.content)
 
+        json_content = json.loads(result.content)
         self.storage_user_id = json_content['uid']
 
         url = 'https://api.dropbox.com/1/shares/sandbox/' + \
@@ -681,6 +758,10 @@ class DropboxBin(Bin):
                                 deadline=URLFETCH_DEADLINE,
                                 validate_certificate=URLFETCH_VALIDATE_CERTS)
 
+        if result.status_code != 200:
+            raise status_map[result.status_code](\
+                'Error while calling Dropbox API. \n' + result.content)
+
         json_content = json.loads(result.content)
         self.share_url = json_content['url']
 
@@ -690,8 +771,11 @@ class DropboxBin(Bin):
                                 deadline=URLFETCH_DEADLINE,
                                 validate_certificate=URLFETCH_VALIDATE_CERTS)
 
-        m = DROPBOX_ID_REGEX.match(result.final_url)
-        self.dropbox_id = m.group(1)
+        if result.status_code != 200:
+            raise status_map[result.status_code](\
+                'Error while calling Dropbox API. \n' + result.content)
+
+        self.dropbox_id = DROPBOX_ID_REGEX.match(result.final_url).group(1)
 
 ################################################################################
 # Task model
@@ -754,6 +838,7 @@ class Task(db.Model):
           'bin_url' : self.bin.get_url(),
           'date_created' : self.date_created.strftime(DEFAULT_DATETIME_FORMAT),
           'date_updated' : self.date_updated.strftime(DEFAULT_DATETIME_FORMAT),
+          'datetime_format' : DEFAULT_DATETIME_FORMAT,
           'status' : self.status,
           'status_msg' : self.status_msg
         }
@@ -772,70 +857,50 @@ class BinHandler(webapp2.RequestHandler):
                                oauth_methods=['GET', 'POST'])
 
     def get(self):
-        try:
-            self.response.headers.add_header('Access-Control-Allow-Origin', '*')
+        self.response.headers.add_header('Access-Control-Allow-Origin', '*')
 
-            accept_header = get_best_mime_match_or_default(
-                self.request.headers['Accept'],
-                SUPPORTED_OUTPUT_APPENDR_MIME_TYPES,
-                DEFAULT_OUTPUT_APPENDR_MIME_TYPE)
+        accept_header = get_best_mime_match_or_default(
+            self.request.headers['Accept'],
+            SUPPORTED_OUTPUT_APPENDR_MIME_TYPES,
+            DEFAULT_OUTPUT_APPENDR_MIME_TYPE)
 
-            if not accept_header:
-                self.error(406)
-                return
+        validate_input_param(self.request.params, 'api_token', True,
+                             validate_non_empty_string,
+                             False)
 
-            api_token = self.request.params.get('api_token', None)
-            storage_backend = self.request.params.get('storage_backend', None)
+        validate_input_param(self.request.params, 'storage_backend', True,
+                             validate_non_empty_string,
+                             False)
 
-            if 'api_token' is None:
-                self.error(400)
-                return
+        api_token = self.request.params.get('api_token')
+        storage_backend = self.request.params.get('storage_backend')
 
-            if 'storage_backend' is None:
-                self.error(400)
-                return
+        user_id = Bin.get_user_id_for_token(storage_backend, api_token)
+        bins = Bin.all().filter('storage_backend =', storage_backend)
+        bins = bins.filter('storage_user_id =', user_id)
+        bins = bins.order('-date_created').fetch(None)
 
-            user_id = Bin.get_user_id_for_token(storage_backend, api_token)
-
-            self.response.headers['Content-Type'] = accept_header
-            bins = Bin.all().filter('storage_backend =', storage_backend)
-            bins = bins.filter('storage_user_id =', user_id)
-            bins = bins.order('-date_created').fetch(None)
-            self.response.out.write(Bin.serialize(bins, accept_header))
-        except AppendrError as e:
-            self.response.set_status(e.code)
-            self.response.out.write(e.msg)
+        self.response.headers['Content-Type'] = accept_header
+        self.response.out.write(Bin.serialize(bins, accept_header))
 
     def post(self):
-        try:
-            self.response.headers.add_header('Access-Control-Allow-Origin', '*')
-            self.response.headers.add_header('Access-Control-Expose-Headers',
-                                             'Location')
+        self.response.headers.add_header('Access-Control-Allow-Origin', '*')
+        self.response.headers.add_header('Access-Control-Expose-Headers',
+                                         'Location')
 
-            content_type = self.request.content_type
+        content_type = self.request.content_type
 
-            if content_type not in SUPPORTED_APPEND_DATA_MIME_TYPES:
-                self.error(415)
-                return
+        accept_header = get_best_mime_match_or_default(
+            self.request.headers['Accept'],
+            SUPPORTED_OUTPUT_APPENDR_MIME_TYPES,
+            DEFAULT_OUTPUT_APPENDR_MIME_TYPE)
 
-            accept_header = get_best_mime_match_or_default(
-                self.request.headers['Accept'],
-                SUPPORTED_OUTPUT_APPENDR_MIME_TYPES,
-                DEFAULT_OUTPUT_APPENDR_MIME_TYPE)
+        params = get_request_params(self.request, content_type)
+        bin = Bin.create(params)
+        bin.put()
 
-            if not accept_header:
-                self.error(406)
-                return
-
-            params = get_request_params(self.request, content_type)
-            bin = Bin.create(params)
-            bin.put()
-
-            self.response.headers['Location'] = bin.get_url()
-            self.response.set_status(303)
-        except AppendrError as e:
-            self.response.set_status(e.code)
-            self.response.out.write(e.msg)
+        self.response.headers['Location'] = bin.get_url()
+        self.response.set_status(303)
 
 ################################################################################
 # Handler for requests to a specific bin
@@ -847,73 +912,55 @@ class DataHandler(webapp2.RequestHandler):
                                oauth_methods=['GET', 'POST'])
 
     def get(self, bin_name):
-        try:
-            self.response.headers.add_header('Access-Control-Allow-Origin', '*')
+        self.response.headers.add_header('Access-Control-Allow-Origin', '*')
 
-            accept_header = get_best_mime_match_or_default(
-                self.request.headers['Accept'],
-                SUPPORTED_OUTPUT_APPENDR_MIME_TYPES,
-                DEFAULT_OUTPUT_APPENDR_MIME_TYPE)
+        accept_header = get_best_mime_match_or_default(
+            self.request.headers['Accept'],
+            SUPPORTED_OUTPUT_APPENDR_MIME_TYPES,
+            DEFAULT_OUTPUT_APPENDR_MIME_TYPE)
 
-            if not accept_header:
-                self.error(406)
-                return
+        bin = Bin.get_by_key_name(bin_name)
 
-            bin = Bin.get_by_key_name(bin_name)
+        if (bin is None):
+            raise HTTPNotFound()
 
-            if (bin is None):
-                self.error(404)
-                return
-
-            self.response.headers['Content-Type'] = accept_header
-            self.response.set_status(200)
-            self.response.out.write(Bin.serialize(bin, accept_header))
-        except AppendrError as e:
-            self.response.set_status(e.code)
-            self.response.out.write(e.msg)
+        self.response.headers['Content-Type'] = accept_header
+        self.response.set_status(200)
+        self.response.out.write(Bin.serialize(bin, accept_header))
 
     def post(self, bin_name):
-        try:
-            self.response.headers.add_header('Access-Control-Allow-Origin', '*')
+        self.response.headers.add_header('Access-Control-Allow-Origin', '*')
 
-            bin = Bin.get_by_key_name(bin_name)
+        bin = Bin.get_by_key_name(bin_name)
 
-            if (bin is None):
-                self.error(404)
-                return
+        if (bin is None):
+            raise HTTPNotFound()
 
-            content_type = self.request.content_type
+        content_type = self.request.content_type
+        params = get_request_params(self.request, content_type)
 
-            if content_type not in SUPPORTED_APPEND_DATA_MIME_TYPES:
-                self.error(415)
-                return
+        params['date_created'] = str(datetime.utcnow())
+        task_body = json.dumps(params)
+        task_headers = {'Content-Type' : MIME_TYPE_JSON}
 
-            params = get_request_params(self.request, content_type)
-            params['date_created'] = str(datetime.utcnow())
-            task_body = json.dumps(params)
-            task_headers = {'Content-Type' : MIME_TYPE_JSON}
+        queue_name = get_queue_name_for_bin(bin_name)
+        task_name = Task.generate_name()
 
-            queue_name = get_queue_name_for_bin(bin_name)
-            task_name = Task.generate_name()
+        task = Task(key_name=task_name)
+        task.bin = bin
+        task.status = TASK_STATUS_QUEUED
+        task.status_msg = ''
+        task.put()
 
-            task = Task(key_name=task_name)
-            task.bin = bin
-            task.status = TASK_STATUS_QUEUED
-            task.status_msg = ''
-            task.put()
+        taskqueue.add(url=webapp2.uri_for(ROUTE_NAME_TASK_APPEND,
+                      bin_name=bin_name),
+                      queue_name=queue_name,
+                      name=task_name,
+                      payload=task_body,
+                      headers=task_headers)
 
-            taskqueue.add(url=webapp2.uri_for(ROUTE_NAME_TASK_APPEND,
-                          bin_name=bin_name),
-                          queue_name=queue_name,
-                          name=task_name,
-                          payload=task_body,
-                          headers=task_headers)
-
-            self.response.headers['Location'] = task.get_url()
-            self.response.set_status(303)
-        except AppendrError as e:
-            self.response.set_status(e.code)
-            self.response.out.write(e.msg)
+        self.response.headers['Location'] = task.get_url()
+        self.response.set_status(303)
 
 ################################################################################
 # Task handler for appending data to a bin
@@ -1012,18 +1059,13 @@ class TaskStatusHandler(webapp2.RequestHandler):
                 SUPPORTED_OUTPUT_APPENDR_MIME_TYPES,
                 DEFAULT_OUTPUT_APPENDR_MIME_TYPE)
 
-        if not accept_header:
-            self.error(406)
-            return
-
         bin = None
 
         if not task_name:
             bin = Bin.get_by_key_name(bin_name)
 
             if (bin is None):
-                self.error(404)
-                return
+                raise HTTPNotFound()
 
             task = Task.all().filter('bin =', bin_db_key)
             task = task.order('-date_created').fetch(None)
@@ -1032,8 +1074,7 @@ class TaskStatusHandler(webapp2.RequestHandler):
             task = Task.get_by_key_name(task_name)
 
             if (task is None):
-                self.error(404)
-                return
+                raise HTTPNotFound()
 
         self.response.headers['Content-Type'] = accept_header
         self.response.set_status(200)
@@ -1055,10 +1096,6 @@ class MainHandler(webapp2.RequestHandler):
                 SUPPORTED_OUTPUT_APPENDR_MIME_TYPES,
                 DEFAULT_OUTPUT_APPENDR_MIME_TYPE)
 
-        if not accept_header:
-            self.error(406)
-            return
-
         if accept_header in [MIME_TYPE_HTML]:
             template = JINJA_ENVIRONMENT.get_template(TEMPLATE_INDEX)
             resp_content = template.render()
@@ -1077,6 +1114,11 @@ class MainHandler(webapp2.RequestHandler):
 
 class OAuthGitHubTokenHandler(webapp2.RequestHandler):
     def get(self):
+        accept_header = get_best_mime_match_or_default(
+                self.request.headers['Accept'],
+                [MIME_TYPE_HTML],
+                MIME_TYPE_HTML)
+
         oauth_code = self.request.params.get('code')
 
         params = {
@@ -1092,12 +1134,17 @@ class OAuthGitHubTokenHandler(webapp2.RequestHandler):
             'Content-Type' : MIME_TYPE_FORM
         }
 
-        result = urlfetch.fetch(url='https://github.com/login/oauth/access_token',
-                                payload=payload,
-                                method=urlfetch.POST,
-                                headers=headers,
-                                deadline=URLFETCH_DEADLINE,
-                                validate_certificate=URLFETCH_VALIDATE_CERTS)
+        result = urlfetch.fetch(
+                    url='https://github.com/login/oauth/access_token',
+                    payload=payload,
+                    method=urlfetch.POST,
+                    headers=headers,
+                    deadline=URLFETCH_DEADLINE,
+                    validate_certificate=URLFETCH_VALIDATE_CERTS)
+
+        if result.status_code != 200:
+            raise status_map[result.status_code](\
+                'Error while creating GitHub OAuth token. \n' + result.content)
 
         access_token = json.loads(result.content)['access_token']
         template = JINJA_ENVIRONMENT.get_template(TEMPLATE_OAUTH_TOKEN)
@@ -1115,6 +1162,11 @@ class OAuthGitHubTokenHandler(webapp2.RequestHandler):
 
 class OAuthDropboxTokenHandler(webapp2.RequestHandler):
     def get(self):
+        accept_header = get_best_mime_match_or_default(
+                self.request.headers['Accept'],
+                [MIME_TYPE_HTML],
+                MIME_TYPE_HTML)
+
         oauth_code = self.request.params.get('code')
 
         params = {
@@ -1138,6 +1190,10 @@ class OAuthDropboxTokenHandler(webapp2.RequestHandler):
                                 headers=headers,
                                 deadline=URLFETCH_DEADLINE,
                                 validate_certificate=URLFETCH_VALIDATE_CERTS)
+
+        if result.status_code != 200:
+            raise status_map[result.status_code](\
+                'Error while creating Dropbox OAuth token. \n' + result.content)
 
         access_token = json.loads(result.content)['access_token']
         template = JINJA_ENVIRONMENT.get_template(TEMPLATE_OAUTH_TOKEN)
@@ -1195,3 +1251,10 @@ app = webapp2.WSGIApplication([
                   handler=OAuthDropboxTokenHandler,
                   name=ROUTE_NAME_OAUTH_DROPBOX)
 ], debug=DEBUG)
+
+app.error_handlers[400] = handle_error
+app.error_handlers[401] = handle_error
+app.error_handlers[404] = handle_error
+app.error_handlers[406] = handle_error
+app.error_handlers[415] = handle_error
+app.error_handlers[500] = handle_error

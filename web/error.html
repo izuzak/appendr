@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Appendr error{% endblock %}
+{% block content %}
+  <div class="container">
+
+  <h3> Ooops, there was an error while processing your request </h3>
+
+  <p>
+    Please retry your request and if the error persists - <a href="https://github.com/izuzak/appendr/issues"> submit an issue</a>.
+  </p>
+
+  <div class="row-fluid">
+    <div class="span6">
+      <p>
+        <strong>Error details</strong>:
+
+        <pre><strong>HTTP response</strong>: {{ response_code }} {{ response_title }}
+
+<strong>Message</strong>: {{ details }}
+
+<strong>Stack trace</strong>:
+{{ stack_trace }}</pre>
+      </p>
+    </div>
+    <div class="span6">
+      <p>
+        <strong>Request info</strong>:
+        <pre><strong>Request URL</strong>: {{ url }}
+
+<strong>Method</strong>: {{ method }}
+
+<strong>Headers</strong>:
+{% for header in headers %}{{ header }}: {{ headers[header] }}
+{% endfor %}
+<strong>Body</strong>:
+{{ body }}</pre>
+      </p>
+    </div>
+  </div>
+
+{% endblock %}
+
+{% block header %}
+          <header class="header-other">
+            <h1 class="title-other">
+              <a href="/">Appendr</a>
+            </h1>
+          </header>
+{% endblock %}
+
+{% block footer %} {{ super() }} {% endblock %}
+
+{% block scripts %}
+        <script type="text/javascript">
+          setTimeout(function () {
+            $('.bs-docs-sidenav').affix({
+              offset: {
+                top: 50,
+                bottom: 0
+              }
+            })
+          }, 100)
+        </script>
+{% endblock %}
