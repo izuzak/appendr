@@ -1,3 +1,5 @@
+appendr_cfg.py
+
 *.py[cod]
 
 # C extensions

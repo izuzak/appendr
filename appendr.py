@@ -18,8 +18,8 @@ import dateutil.parser
 import dateutil.relativedelta
 import logging
 import urllib
-import lxml.html
 import appendr_cfg
+import re
 
 ################################################################################
 # Config parameters and constants
@@ -141,6 +141,9 @@ TASK_STATUS_QUEUED = 'queued'
 TASK_STATUS_COMPLETED = 'completed'
 TASK_STATUS_RETRYING = 'retrying'
 TASK_STATUS_FAILED = 'failed'
+
+# Regular expression to extract dropbox share IDs from URLs
+DROPBOX_ID_REGEX = re.compile(r'https://www\.dropbox\.com/s/(\w+?)/.*')
 
 # Error messages
 ERROR_MSG_NON_EMPTY_STRING_PARAM = ('Invalid value for parameter %s: %s. '
@@ -545,18 +548,17 @@ class GistBin(Bin):
 class DropboxBin(Bin):
     api_token = db.StringProperty()
     filename = db.StringProperty()
-    share_url = db.StringProperty()
-    raw_url = db.StringProperty()
+    dropbox_id = db.StringProperty()
 
     def get_dropbox_api_url(self):
         return 'https://api-content.dropbox.com/1/files/sandbox/' + \
                 self.key().name() + '/' + self.filename
 
     def get_raw_content_url(self):
-        return self.raw_url
+        return 'https://dl.dropboxusercontent.com/s/' + self.dropbox_id + '/' + self.filename
 
     def get_html_content_url(self):
-        return self.share_url
+        return 'https://www.dropbox.com/s/' + self.dropbox_id + '/' + self.filename
 
     def get_info(self):
         bin_info = Bin.get_info(self)
@@ -688,12 +690,8 @@ class DropboxBin(Bin):
                                 deadline=URLFETCH_DEADLINE,
                                 validate_certificate=URLFETCH_VALIDATE_CERTS)
 
-        self.share_url = result.final_url
-
-        html = result.content
-        root = lxml.html.fromstring(html)
-        a = root.xpath("//a[@id='download_button_link']")
-        self.raw_url = a[0].attrib['href'][:-5]
+        m = DROPBOX_ID_REGEX.match(result.final_url)
+        self.dropbox_id = m.group(1)
 
 ################################################################################
 # Task model
