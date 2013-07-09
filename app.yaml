@@ -15,6 +15,10 @@ handlers:
 - url: /web/stylesheets.*
   static_dir: web/stylesheets
 
+- url: /favicon.ico
+  static_files: web/favicon.ico
+  upload: web/favicon.ico
+
 - url: /tasks/append/.*
   script: appendr.app
   login: admin
