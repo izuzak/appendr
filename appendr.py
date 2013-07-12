@@ -320,7 +320,7 @@ def handle_error(request, response, exception):
     accept_header = None
     try:
         accept_header = get_best_mime_match_or_default(
-                request.headers['Accept'],
+                request.headers.get('Accept'),
                 SUPPORTED_OUTPUT_APPENDR_MIME_TYPES,
                 DEFAULT_OUTPUT_APPENDR_MIME_TYPE)
     except HTTPNotAcceptable as e:
@@ -860,7 +860,7 @@ class BinHandler(webapp2.RequestHandler):
         self.response.headers.add_header('Access-Control-Allow-Origin', '*')
 
         accept_header = get_best_mime_match_or_default(
-            self.request.headers['Accept'],
+            self.request.headers.get('Accept'),
             SUPPORTED_OUTPUT_APPENDR_MIME_TYPES,
             DEFAULT_OUTPUT_APPENDR_MIME_TYPE)
 
@@ -891,7 +891,7 @@ class BinHandler(webapp2.RequestHandler):
         content_type = self.request.content_type
 
         accept_header = get_best_mime_match_or_default(
-            self.request.headers['Accept'],
+            self.request.headers.get('Accept'),
             SUPPORTED_OUTPUT_APPENDR_MIME_TYPES,
             DEFAULT_OUTPUT_APPENDR_MIME_TYPE)
 
@@ -915,7 +915,7 @@ class DataHandler(webapp2.RequestHandler):
         self.response.headers.add_header('Access-Control-Allow-Origin', '*')
 
         accept_header = get_best_mime_match_or_default(
-            self.request.headers['Accept'],
+            self.request.headers.get('Accept'),
             SUPPORTED_OUTPUT_APPENDR_MIME_TYPES,
             DEFAULT_OUTPUT_APPENDR_MIME_TYPE)
 
@@ -1055,7 +1055,7 @@ class TaskStatusHandler(webapp2.RequestHandler):
         self.response.headers.add_header('Access-Control-Allow-Origin', '*')
 
         accept_header = get_best_mime_match_or_default(
-                self.request.headers['Accept'],
+                self.request.headers.get('Accept'),
                 SUPPORTED_OUTPUT_APPENDR_MIME_TYPES,
                 DEFAULT_OUTPUT_APPENDR_MIME_TYPE)
 
@@ -1092,7 +1092,7 @@ class MainHandler(webapp2.RequestHandler):
         self.response.headers.add_header('Access-Control-Allow-Origin', '*')
 
         accept_header = get_best_mime_match_or_default(
-                self.request.headers['Accept'],
+                self.request.headers.get('Accept'),
                 SUPPORTED_OUTPUT_APPENDR_MIME_TYPES,
                 DEFAULT_OUTPUT_APPENDR_MIME_TYPE)
 
@@ -1115,7 +1115,7 @@ class MainHandler(webapp2.RequestHandler):
 class OAuthGitHubTokenHandler(webapp2.RequestHandler):
     def get(self):
         accept_header = get_best_mime_match_or_default(
-                self.request.headers['Accept'],
+                self.request.headers.get('Accept'),
                 [MIME_TYPE_HTML],
                 MIME_TYPE_HTML)
 
@@ -1163,7 +1163,7 @@ class OAuthGitHubTokenHandler(webapp2.RequestHandler):
 class OAuthDropboxTokenHandler(webapp2.RequestHandler):
     def get(self):
         accept_header = get_best_mime_match_or_default(
-                self.request.headers['Accept'],
+                self.request.headers.get('Accept'),
                 [MIME_TYPE_HTML],
                 MIME_TYPE_HTML)
 
