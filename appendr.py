@@ -900,7 +900,12 @@ class BinHandler(webapp2.RequestHandler):
         bin.put()
 
         self.response.headers['Location'] = bin.get_url()
-        self.response.set_status(303)
+
+        if accept_header == MIME_TYPE_HTML:
+            self.response.set_status(303)
+        else:
+            self.response.set_status(201)
+            self.response.out.write(Bin.serialize(bin, accept_header))
 
 ################################################################################
 # Handler for requests to a specific bin
@@ -931,6 +936,11 @@ class DataHandler(webapp2.RequestHandler):
     def post(self, bin_name):
         self.response.headers.add_header('Access-Control-Allow-Origin', '*')
 
+        accept_header = get_best_mime_match_or_default(
+            self.request.headers.get('Accept'),
+            SUPPORTED_OUTPUT_APPENDR_MIME_TYPES,
+            DEFAULT_OUTPUT_APPENDR_MIME_TYPE)
+
         bin = Bin.get_by_key_name(bin_name)
 
         if (bin is None):
@@ -960,7 +970,12 @@ class DataHandler(webapp2.RequestHandler):
                       headers=task_headers)
 
         self.response.headers['Location'] = task.get_url()
-        self.response.set_status(303)
+
+        if accept_header == MIME_TYPE_HTML:
+            self.response.set_status(303)
+        else:
+            self.response.set_status(202)
+            self.response.out.write(Task.serialize(task, bin, accept_header))
 
 ################################################################################
 # Task handler for appending data to a bin
