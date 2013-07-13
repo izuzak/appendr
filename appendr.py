@@ -352,7 +352,7 @@ class Bin(polymodel.PolyModel):
     date_updated = db.DateTimeProperty(auto_now_add=True)
     output_format = db.StringProperty()
     storage_backend = db.StringProperty()
-    storage_user_id = db.IntegerProperty()
+    storage_user_id = db.StringProperty()
 
     def get_url(self):
         return webapp2.uri_for(ROUTE_NAME_BIN,
@@ -506,7 +506,7 @@ class GistBin(Bin):
             raise status_map[response.status_code](\
                 'Error while calling GitHub API.\n' + response.content)
         else:
-            return json.loads(response.content)['id']
+            return str(json.loads(response.content)['id'])
 
     def append_data(self, params):
         auth_headers = {
@@ -609,7 +609,7 @@ class GistBin(Bin):
         self.gist_id = json_content['id']
         self.api_token = params['api_token']
         self.filename = params['filename']
-        self.storage_user_id = json_content['user']['id']
+        self.storage_user_id = str(json_content['user']['id'])
 
 ################################################################################
 # DropboxBin model
@@ -654,7 +654,7 @@ class DropboxBin(Bin):
             raise status_map[response.status_code](\
                 'Error while calling Dropbox API. \n' + response.content)
         else:
-            return json.loads(response.content)['uid']
+            return str(json.loads(response.content)['uid'])
 
     def append_data(self, params):
         auth_headers = {
@@ -744,7 +744,7 @@ class DropboxBin(Bin):
                 'Error while calling Dropbox API. \n' + result.content)
 
         json_content = json.loads(result.content)
-        self.storage_user_id = json_content['uid']
+        self.storage_user_id = str(json_content['uid'])
 
         url = 'https://api.dropbox.com/1/shares/sandbox/' + \
               bin_name + '/' + params['filename']
