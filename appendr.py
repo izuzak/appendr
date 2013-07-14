@@ -205,13 +205,18 @@ def validate_input_param(params, name, must_exist, validation_object, default):
 
 # Get a dictionary of params passed in the HTTP request
 def get_request_params(req, content_type):
+    params = None
     if content_type == MIME_TYPE_FORM:
-        return dict(req.params.copy())
+        params = dict(req.params.copy())
     elif content_type == MIME_TYPE_JSON:
-        return json.loads(req.body)
+        params = json.loads(req.body)
     else:
         raise HTTPUnsupportedMediaType('Unsupported body mime type: ' + \
                                         content_type)
+
+    logging.debug('Parsed request params: %s.' % \
+                  json.dumps(params, indent=JSON_INDENT))
+    return params
 
 # Get the name of the task queue which has append tasks for a specific bin
 def get_queue_name_for_bin(bin_name):
@@ -262,6 +267,12 @@ def append_data_json(old_content, params):
 def append_data(old_content, output_format, params):
     params['date_created'] = \
         params['date_created'].strftime(DEFAULT_DATETIME_FORMAT)
+
+    logging.debug('Appending data:\n%s' % json.dumps({
+      'old_data' : old_content,
+      'new_data' : params,
+      'output_format' : output_format
+    }, indent=JSON_INDENT))
 
     if output_format == MIME_TYPE_CSV:
         return append_data_csv(old_content, params)
@@ -317,6 +328,11 @@ def serialize_error(mime_type, error_info):
 
 # Handler for all exception thrown by Appendr
 def handle_error(request, response, exception):
+    logging.exception('Error while processing request.\n%s' % json.dumps({
+                       'request_body' : request.body,
+                       'request_headers' : dict(request.headers)},
+                       indent=JSON_INDENT))
+
     accept_header = None
     try:
         accept_header = get_best_mime_match_or_default(
@@ -445,6 +461,8 @@ class Bin(polymodel.PolyModel):
         bin_name = Bin.generate_name()
         bin = None
 
+        logging.debug('Creating bin %s.' % (bin_name,))
+
         if params['storage_backend'] == STORAGE_BACKEND_GIST:
             bin = GistBin(key_name=bin_name)
         elif params['storage_backend'] == STORAGE_BACKEND_DROPBOX:
@@ -504,7 +522,8 @@ class GistBin(Bin):
 
         if response.status_code != 200:
             raise status_map[response.status_code](\
-                'Error while calling GitHub API.\n' + response.content)
+                'Error while calling GitHub API - fetch user information\n' + \
+                response.content)
         else:
             return str(json.loads(response.content)['id'])
 
@@ -521,7 +540,8 @@ class GistBin(Bin):
 
         if gist_response.status_code != 200:
             raise status_map[gist_response.status_code](\
-                'Error while calling GitHub API.\n' + response.content)
+                'Error while calling GitHub API - fetch gist data\n' + \
+                response.content)
 
         json_gist = json.loads(gist_response.content)
 
@@ -551,7 +571,8 @@ class GistBin(Bin):
 
         if result.status_code != 200:
             raise status_map[result.status_code](\
-                'Error while calling GitHub API. \n' + response.content)
+                'Error while calling GitHub API - update gist data\n' + \
+                response.content)
 
     def initialize(self, bin_name, params):
         if 'is_public' in params:
@@ -601,7 +622,8 @@ class GistBin(Bin):
 
         if result.status_code != 201:
             raise status_map[result.status_code](\
-                'Error while calling GitHub API. ' + result.content)
+                'Error while calling GitHub API - create gist\n' + \
+                result.content)
 
         json_content = json.loads(result.content)
 
@@ -652,7 +674,8 @@ class DropboxBin(Bin):
 
         if response.status_code != 200:
             raise status_map[response.status_code](\
-                'Error while calling Dropbox API. \n' + response.content)
+                'Error while calling Dropbox API - fetch account info\n' + \
+                response.content)
         else:
             return str(json.loads(response.content)['uid'])
 
@@ -669,7 +692,8 @@ class DropboxBin(Bin):
 
         if dropbox_response.status_code != 200:
             raise status_map[dropbox_response.status_code](\
-                'Error while calling Dropbox API.\n' + dropbox_response.content)
+                'Error while calling Dropbox API - fetch file data\n' + \
+                dropbox_response.content)
 
         old_content = dropbox_response.content
         new_content = append_data(old_content, self.output_format, params)
@@ -691,7 +715,8 @@ class DropboxBin(Bin):
 
         if result.status_code != 200:
             raise status_map[result.status_code](\
-                'Error while calling Dropbox API. \n' + result.content)
+                'Error while calling Dropbox API - update file data\n' + \
+                result.content)
 
     def initialize(self, bin_name, params):
         validate_input_param(params, 'api_token', True,
@@ -722,7 +747,8 @@ class DropboxBin(Bin):
 
         if result.status_code != 200:
             raise status_map[result.status_code](\
-                'Error while calling Dropbox API. \n' + result.content)
+                'Error while calling Dropbox API - create file\n' + \
+                result.content)
 
         self.api_token = params['api_token']
         self.filename = params['filename']
@@ -741,7 +767,8 @@ class DropboxBin(Bin):
 
         if result.status_code != 200:
             raise status_map[result.status_code](\
-                'Error while calling Dropbox API. \n' + result.content)
+                'Error while calling Dropbox API - fetch account info\n' + \
+                result.content)
 
         json_content = json.loads(result.content)
         self.storage_user_id = str(json_content['uid'])
@@ -760,7 +787,8 @@ class DropboxBin(Bin):
 
         if result.status_code != 200:
             raise status_map[result.status_code](\
-                'Error while calling Dropbox API. \n' + result.content)
+                'Error while calling Dropbox API - get file public URL\n' + \
+                result.content)
 
         json_content = json.loads(result.content)
         self.share_url = json_content['url']
@@ -773,7 +801,8 @@ class DropboxBin(Bin):
 
         if result.status_code != 200:
             raise status_map[result.status_code](\
-                'Error while calling Dropbox API. \n' + result.content)
+                'Error while calling Dropbox API - retrieve shared file\n' + \
+                result.content)
 
         self.dropbox_id = DROPBOX_ID_REGEX.match(result.final_url).group(1)
 
@@ -969,6 +998,9 @@ class DataHandler(webapp2.RequestHandler):
                       payload=task_body,
                       headers=task_headers)
 
+        logging.debug('Added task %s for bin %s to queue %s.' % \
+                      (task_name, bin_name, queue_name))
+
         self.response.headers['Location'] = task.get_url()
 
         if accept_header == MIME_TYPE_HTML:
@@ -1015,6 +1047,10 @@ class AppendHandler(webapp2.RequestHandler):
             fail_count = self.request.headers['X-AppEngine-TaskExecutionCount']
             task.status_msg = ('Fail count: %s. Last error: %s' % \
                                 (int(fail_count)+1, str(e)))[0:500]
+
+            logging.exception('Error while appending data. ' +\
+                              'Task name: %s.' % (task_name,) +\
+                              'Task fail count: %s' % (fail_count,))
 
             date_limit = task.date_created + \
                 relativedelta(hours = TASK_RETRY_HOURS)
