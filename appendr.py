@@ -35,8 +35,8 @@ DEBUG = True
 if DEBUG:
   logging.getLogger().setLevel(logging.DEBUG)
 
-# How long should user agents cache OAuth access control OPTIONS, in seconds
-OAUTH_ACCESS_CONTROL_MAX_AGE = 60*60*24*30 # 30 days
+# How long should user agents cache CORS access control OPTIONS, in seconds
+CORS_ACCESS_CONTROL_MAX_AGE = 60*60*24*30 # 30 days
 
 # How many task queues exist for queuing append tasks
 NUMBER_OF_APPEND_TASK_QUEUES = 10
@@ -164,9 +164,22 @@ ERROR_MSG_NOT_ACCEPTABLE = ('The application can not return response in the '
 # Helper functions
 ################################################################################
 
-# Gets the best mime type match for the accept header,
-# or uses a default mime type
 def get_best_mime_match_or_default(accept_header, allowed_types, default=None):
+    """ Gets the best mime type match for the accept header.
+
+    Args:
+        accept_header: value of HTTP accept header
+        allowed_types: list of allowed mime types
+        default: mime type to be used if accept_header is None
+
+    Returns:
+        The best mime type match, or default mime type.
+
+    Raises:
+        HTTPNotAcceptable if accept_header was defined but no match could be
+        made in allowed_types.
+    """
+
     if accept_header is None:
         return default
     else:
@@ -178,65 +191,157 @@ def get_best_mime_match_or_default(accept_header, allowed_types, default=None):
         else:
             return match
 
-# Input params validation helpers
-def validate_non_empty_string(name, value):
-    if not (isinstance(value, basestring) and value != ''):
-        raise HTTPClientError(ERROR_MSG_NON_EMPTY_STRING_PARAM % (name, value))
+def validate_non_empty_string(param_name, param_value):
+    """ Validates that the value of a parameter is not an empty string.
 
-def validate_element_of_list(name, value, allowed_values):
-    if value not in allowed_values:
+    Args:
+        param_name: name of parameter
+        param_value: value of parameter
+
+    Returns:
+        True if param_value is a non-empty string value.
+
+    Raises:
+        HTTPClientError if param_value is an empty string or non-string type.
+    """
+
+    if not (isinstance(param_value, basestring) and param_value != ''):
+        raise HTTPClientError(ERROR_MSG_NON_EMPTY_STRING_PARAM % (param_name, param_value))
+
+def validate_element_of_list(param_name, param_value, allowed_values):
+    """ Validates that the value of a parameter is a member of a list.
+
+    Args:
+        param_name: name of parameter
+        param_value: value of parameter
+        allowed_values: list of values that should contain param_value
+
+    Raises:
+        HTTPClientError if param_value is not a member of allowed_values
+    """
+
+    if param_value not in allowed_values:
         raise HTTPClientError(ERROR_MSG_ELEMENT_OF_SET %
-                         (name, value, allowed_values))
+                         (param_name, param_value, allowed_values))
 
-def validate_input_param(params, name, must_exist, validation_object, default):
-    if must_exist and name not in params:
-        raise HTTPClientError(ERROR_MSG_DEFINED % (name,))
+def validate_input_param(params, param_name, must_exist,
+                         validation_object, default):
+    """ Validates the value of a parameter and sets default values.
 
-    elif (must_exist and name in params) or \
-         (not must_exist and name in params and params[name] != ''):
+    Args:
+        params: dictionary-like object of parameters
+        param_name: name of parameter in params that is being validated
+        must_exist: whether or not the parameter must be present in params
+        validation_object: function or object to be used for
+                           validating the parameter
+        default: the value to be used for the parameter if it doesn't exist
+                 in params and it is must_exist is False
+
+    Raises:
+        HTTPClientError if must_exist is True and params do not contain a
+        parameter with name param_name.
+    """
+
+    if must_exist and param_name not in params:
+        raise HTTPClientError(ERROR_MSG_DEFINED % (param_name,))
+
+    elif (must_exist and param_name in params) or \
+         (not must_exist and param_name in params and params[param_name] != ''):
         if isfunction(validation_object):
-            validation_object(name, params[name])
+            validation_object(param_name, params[param_name])
         elif isinstance(validation_object, list):
-            validate_element_of_list(name, params[name], validation_object)
+            validate_element_of_list(param_name, params[param_name], validation_object)
     else:
-        params[name] = default
+        params[param_name] = default
 
-    return params
+def get_request_params(request):
+    """ Extracts a dictionary of params passed in the HTTP request, based on
+        the content type of the request. For example, for url-encoded params
+        these are just extracted from the request, but for JSON params in the
+        body - these are parsed via JSON into a dict and then returned.
 
-# Get a dictionary of params passed in the HTTP request
-def get_request_params(req, content_type):
+    Args:
+        request: the HTTP request
+
+    Returns:
+        A dict of HTTP request parameters.
+
+    Raises:
+        HTTPUnsupportedMediaType if request content type is unsupported.
+    """
+
     params = None
-    if content_type == MIME_TYPE_FORM:
-        params = dict(req.params.copy())
-    elif content_type == MIME_TYPE_JSON:
-        params = json.loads(req.body)
+    if request.content_type == MIME_TYPE_FORM:
+        params = dict(request.params.copy())
+    elif request.content_type == MIME_TYPE_JSON:
+        params = json.loads(request.body)
     else:
         raise HTTPUnsupportedMediaType('Unsupported body mime type: ' + \
-                                        content_type)
+                                        request.content_type)
 
     logging.debug('Parsed request params: %s.' % \
                   json.dumps(params, indent=JSON_INDENT))
     return params
 
-# Get the name of the task queue which has append tasks for a specific bin
 def get_queue_name_for_bin(bin_name):
+    """ Gets the name of the task queue which stores append tasks for a
+        specific bin. This is done by "sharding" tasks to queues based on
+        the name of the bin.
+
+    Args:
+        bin_name: name of a bin
+
+    Returns:
+        Name of task queue responsible for storing tasks for a bin_name bin.
+    """
+
     queue_num = sum([ord(ch) for ch in bin_name]) % NUMBER_OF_APPEND_TASK_QUEUES
     return APPEND_TASK_QUEUES_PREFIX + str(queue_num)
 
-# Gets the sorted keys of a dictionary, with the creation date key in 1st place
 def get_data_csv_key_list(params):
+    """ Sorts keys of a dictionary, with the creation date key in first place.
+        This is used for CSV output in order to have the creation date in
+        first place always, and the other keys sorted (in the same order).
+
+    Args:
+        params: dictionary object
+
+    Returns:
+        List of keys in params with 'date_created' key in first place
+    """
+
     keys = params.keys()
     keys.remove('date_created')
     keys.sort()
     keys.insert(0, 'date_created')
     return keys
 
-# Gets a list of dict values sorted by the order of keys in another list
 def get_dict_values_sorted(params, keys):
-    return [params[key] for key in keys]
+    """ Gets a list of dict values sorted by the order of keys in another list.
 
-# Appends a dict of key-value data to an existing CSV document
+    Args:
+        params: dictionary-like object
+        keys: list of keys
+
+    Returns:
+        List of values in params, but sorted according to order of related keys
+        in keys.
+    """
+
+    return [params.get(key) for key in keys]
+
 def append_data_csv(old_content, params):
+    """ Appends key-value data to an existing CSV document.
+
+    Args:
+        old_content: string with existing CSV data
+        params: dictionary-like object with key-value data
+
+    Returns:
+        String representing CSV data that contains both old_content and params,
+        where params was appended as a new row of CSV data.
+    """
+
     key_list = get_data_csv_key_list(params)
 
     output = cStringIO.StringIO()
@@ -257,14 +362,39 @@ def append_data_csv(old_content, params):
     else:
         return old_content+output.getvalue()
 
-# Appends a dict of key-value data to an existing JSON document
 def append_data_json(old_content, params):
+    """ Appends key-value data to an existing JSON document.
+
+    Args:
+        old_content: string with existing JSON data, represented as an array of
+                     sets of key-value pairs (e.g. [{...}, {...}, ...])
+        params: dictionary-like object with key-value data
+
+    Returns:
+        String representing JSON data that contains both old_content and params,
+        where params was appended as a new element in the top-level JSON array.
+    """
+
     json_data = json.loads(old_content)
     json_data.append(params)
     return json.dumps(json_data, indent=JSON_INDENT)
 
-# Appends a dict of key-value data to an existing document
 def append_data(old_content, output_format, params):
+    """ Appends a key-value data to an existing document based on the format
+        of the document.
+
+    Args:
+        old_content: string representing existing data/document
+        output_format: mime type format of the document
+        params: dictionary-like object with key-value data
+
+    Returns:
+        String document with existing and new data appended.
+
+    Raises:
+        HTTPServerError if output_format is unsupported by application.
+    """
+
     params['date_created'] = \
         params['date_created'].strftime(DEFAULT_DATETIME_FORMAT)
 
@@ -284,21 +414,43 @@ def append_data(old_content, output_format, params):
         # will actually never happen since we catch this before
         raise HTTPServerError('Invalid output format: %s' % (output_format),)
 
-# Response for HTTP OPTIONS request which basically just sends OAuth headers
 def setHTTPOptionsResponse(response,
-                           oauth_origin='*',
-                           oauth_methods=['GET'],
-                           oauth_headers=['Content-Type']):
+                           cors_origin='*',
+                           cors_methods=['GET'],
+                           cors_headers=['Content-Type']):
+    """ Constructs the response to HTTP OPTIONS request.
+
+    Args:
+        response: the HTTP response object
+        cors_origin: domains for which cross-domains should be allowed via
+                     CORS
+        cors_methods: list of methods to be allowed via CORS and regular HTTP
+        cors_headers: list of HTTP headers to be exposed to cross-domain calls
+    """
+
     headers = response.headers
-    headers.add_header('Access-Control-Allow-Origin', oauth_origin)
-    headers.add_header('Access-Control-Allow-Methods', ', '.join(oauth_methods))
-    headers.add_header('Access-Control-Allow-Headers', ', '.join(oauth_headers))
-    headers.add_header('Access-Control-Max-Age', OAUTH_ACCESS_CONTROL_MAX_AGE)
-    headers.add_header('Allow', ', '.join(['OPTIONS'] + oauth_methods))
+    headers.add_header('Access-Control-Allow-Origin', cors_origin)
+    headers.add_header('Access-Control-Allow-Methods', ', '.join(cors_methods))
+    headers.add_header('Access-Control-Allow-Headers', ', '.join(cors_headers))
+    headers.add_header('Access-Control-Max-Age', CORS_ACCESS_CONTROL_MAX_AGE)
+    headers.add_header('Allow', ', '.join(['OPTIONS'] + cors_methods))
     response.set_status(200)
 
-# Extracts request/response information for error handling
 def extractHTTPerrorInfo(request, response, exception):
+    """ Extracts request/response information for error handling.
+
+    Args:
+        request: HTTP request object
+        response: HTTP response object
+        exception: Exception that occurred during request processing.
+
+    Returns:
+        Dictionary with information for error handling: request url ("url"),
+        request HTTP method ("method"), request body ("body"), request headers
+        ("headers"), response code ("response_code"), response title
+        ("response_title"), details about the error ("details") and the
+        exception stack trace ("stack_trace").
+    """
     info = dict()
 
     info['url'] = request.url
@@ -312,8 +464,20 @@ def extractHTTPerrorInfo(request, response, exception):
 
     return info
 
-# Serialization of errors based on acceptable media type
 def serialize_error(mime_type, error_info):
+    """ Serialization of error handling information based on mime type.
+
+    Args:
+        mime_type: mime type to serialize error info to
+        error_info: information about an exception that happened
+
+    Returns:
+        String representing the error_info in mime_type.
+
+    Raises:
+        HTTPNotAcceptable if mime_type is not supported by application.
+    """
+
     if mime_type == MIME_TYPE_HTML:
         template = JINJA_ENVIRONMENT.get_template(TEMPLATE_ERROR)
         return template.render(error_info)
@@ -326,8 +490,16 @@ def serialize_error(mime_type, error_info):
         raise HTTPNotAcceptable(ERROR_MSG_NOT_ACCEPTABLE % \
                   (accept_header, allowed_types))
 
-# Handler for all exception thrown by Appendr
 def handle_error(request, response, exception):
+    """ Handler for all exception thrown by application. Extracts the error
+        info, logs it, serializes into into an acceptable mime type and returns
+        to the client.
+
+    Args:
+        request: HTTP request
+        response: HTTP response
+        exception: exception that occurred during request processing
+    """
     logging.exception('Error while processing request.\n%s' % json.dumps({
                        'request_body' : request.body,
                        'request_headers' : dict(request.headers)},
@@ -364,6 +536,10 @@ def handle_error(request, response, exception):
 ################################################################################
 
 class Bin(polymodel.PolyModel):
+    """ Represents the base (abstract) class for bins, where subclasses are
+        implemented for each supported backend service.
+    """
+
     date_created = db.DateTimeProperty(auto_now_add=True)
     date_updated = db.DateTimeProperty(auto_now_add=True)
     output_format = db.StringProperty()
@@ -371,22 +547,51 @@ class Bin(polymodel.PolyModel):
     storage_user_id = db.StringProperty()
 
     def get_url(self):
+        """ Constructs the URL for this bin resource.
+
+        Returns:
+            String representation of full URL of this bin.
+        """
+
         return webapp2.uri_for(ROUTE_NAME_BIN,
                                bin_name=self.key().name(),
                                _full=True)
 
     def get_tasks_url(self):
+        """ Constructs the URL for the tasks resource of this bin.
+
+        Returns:
+            String representation of full URL for the task resource of this bin.
+        """
+
         return webapp2.uri_for(ROUTE_NAME_TASKS,
                                bin_name=self.key().name(),
                                _full=True)
 
     def get_raw_content_url(self):
+        """ (Abstract) Constructs the URL for the raw contents associated with
+            this bin. This URL will be on the domain of the external storage
+            service. Subclasses of Bin must/should implement this method.
+        """
+
         return None
 
     def get_html_content_url(self):
+        """ (Abstract) Constructs the URL for the HTML contents associated with
+            this bin. This URL will be on the domain of the external storage
+            service. Subclasses of Bin must/should implement this method.
+        """
+
         return None
 
     def get_info(self):
+        """ Constructs the information about this bin resource that is sent
+            over the network to clients.
+
+        Returns:
+            Dictionary of bin properties and tasks.
+        """
+
         bin_tasks = Task.all().filter('bin =', self.key())
         bin_tasks = bin_tasks.order('-date_created').fetch(None)
 
@@ -406,6 +611,13 @@ class Bin(polymodel.PolyModel):
 
     @classmethod
     def generate_name(cls):
+        """ Generates a unique name for a Bin.
+
+        Returns:
+            String representing a unique name for a bin, where unique means
+            with respect to all other Bin instances stored in the datastore.
+        """
+
         bin_name = None
         while True:
             bin_name = \
@@ -419,6 +631,20 @@ class Bin(polymodel.PolyModel):
 
     @classmethod
     def serialize(cls, bins, content_type):
+        """ Serializes a Bin or list of Bins based on the desired output
+            mime type.
+
+        Args:
+            bins: a Bin instance or list of Bins
+            content_type: mime type to which bins should be serialized
+
+        Returns:
+            String representation of bins in content_type format.
+
+        Raises:
+            HTTPNotAcceptable is content_type is not supported by application.
+        """
+
         bins_info = None
 
         if isinstance(bins, Bin):
@@ -436,9 +662,31 @@ class Bin(polymodel.PolyModel):
             else:
                 template = JINJA_ENVIRONMENT.get_template(TEMPLATE_BINS)
             return template.render({'bins' : bins_info})
+        else:
+            # should never happen because it is detected earlier
+            raise HTTPNotAcceptable(ERROR_MSG_NOT_ACCEPTABLE % \
+                      (content_type, SUPPORTED_OUTPUT_APPENDR_MIME_TYPES))
+
 
     @classmethod
     def get_user_id_for_token(cls, storage_backend, api_token):
+        """ Gets the user id for an OAuth token of a specific backend storage
+            service. The user id is specific for the storage backend so this
+            method delegated to a subclass that will fetch this id via an
+            API call to the backend service.
+
+        Args:
+            storage_backend: id of the backend storage service for which the
+                             API token is valid.
+            api_token: OAuth API token for a backend storage service.
+
+        Returns:
+            String representation of user id associated with api_token.
+
+        Raises:
+            HTTPClientError if storage_backend is not supported by application.
+        """
+
         if storage_backend == STORAGE_BACKEND_GIST:
             return GistBin.get_user_id_for_token(api_token)
         elif storage_backend == STORAGE_BACKEND_DROPBOX:
@@ -450,6 +698,23 @@ class Bin(polymodel.PolyModel):
 
     @classmethod
     def create(cls, params):
+        """ Creates a Bin from input parameters. This method delegates to
+            subclasses to finish parameter validation, bin creation and
+            initialization.
+
+        Args:
+            params: a dictionary-like object with parameters for creating
+            a Bin. Parameters may vary based on backend storage service used
+            for this Bin.
+
+        Returns:
+            Bin instance which has not been written to datastore.
+
+        Raises:
+            HTTPClientError if parameters define a storage backend that is
+            not supported by the application.
+        """
+
         validate_input_param(params, 'storage_backend', False,
                              SUPPORTED_STORAGE_BACKENDS.keys(),
                              DEFAULT_STORAGE_BACKEND)
@@ -483,22 +748,54 @@ class Bin(polymodel.PolyModel):
 ################################################################################
 
 class GistBin(Bin):
+    """ A Bin implementation that uses GitHub Gists for storing data. """
+
     is_public = db.BooleanProperty()
     gist_id = db.StringProperty()
     api_token = db.StringProperty()
     filename = db.StringProperty()
 
     def get_gist_api_url(self):
+        """ Constructs the URL for fetching the representation of the
+            gist that stores the data for this bin, via the GitHub API.
+
+        Returns:
+            String representation of GitHub API resource that stores the data
+            for this bin.
+        """
+
         return 'https://api.github.com/gists/' + self.gist_id
 
     def get_raw_content_url(self):
+        """ Implementation of the Bin abstract method.
+
+        Returns:
+            String representation of URL of resource on GitHub domain that
+            contains the raw data for this Bin.
+        """
+
         return 'https://gist.github.com/raw/' + self.gist_id + \
                 '/' + self.filename
 
     def get_html_content_url(self):
+        """ Implementation of the Bin abstract method.
+
+        Returns:
+            String representation of URL of resource on GitHub domain that
+            contains the HTML page with data for this Bin.
+        """
+
         return 'https://gist.github.com/' + self.gist_id
 
     def get_info(self):
+        """ Constructs the information about this GistBin resource that is sent
+            over the network to clients. First constructs the generic Bin
+            information and the adds GistBin specific information.
+
+        Returns:
+            Dictionary of bin properties and tasks.
+        """
+
         bin_info = Bin.get_info(self)
 
         bin_info['is_public'] = self.is_public
@@ -510,6 +807,15 @@ class GistBin(Bin):
 
     @classmethod
     def get_user_id_for_token(cls, api_token):
+        """ Retrieves the user id for a GitHub OAuth token.
+
+        Args:
+            api_token: OAuth token for GitHub API.
+
+        Returns:
+            String representation of GitHub user id associated with api_token.
+        """
+
         auth_headers = {
             'Authorization': 'token ' + api_token
         }
@@ -528,6 +834,17 @@ class GistBin(Bin):
             return str(json.loads(response.content)['id'])
 
     def append_data(self, params):
+        """ Appends data to a Gist. Works by fetching existing data, then
+            appending new data locally and writing the results back to the Gist.
+
+        Args:
+            params: dictionary-like object with key-value data to be appended
+                    to existing data
+
+        Raises:
+            HTTPError if GitHub API invocation failed.
+        """
+
         auth_headers = {
             'Authorization': 'token ' + self.api_token
         }
@@ -575,6 +892,18 @@ class GistBin(Bin):
                 response.content)
 
     def initialize(self, bin_name, params):
+        """ Initializes a GistBin by creating a GitHub gist and writing
+            initial data since files in a gist can't be empty.
+
+        Args:
+            bin_name: name of the Bin to be initialized (not used here)
+            params: dictionary-like object with parameters relevant for
+                    GistBin creation
+
+        Raises:
+            HTTPError if GitHub API invocations failed.
+        """
+
         if 'is_public' in params:
             if params['is_public'] == 'true':
                 params['is_public'] = True
@@ -638,23 +967,55 @@ class GistBin(Bin):
 ################################################################################
 
 class DropboxBin(Bin):
+    """ A Bin implementation that uses Dropbox for storing data. """
+
     api_token = db.StringProperty()
     filename = db.StringProperty()
     dropbox_id = db.StringProperty()
 
     def get_dropbox_api_url(self):
+        """ Constructs the URL for fetching the representation of the
+            gist that stores the data for this bin, via the Dropbox API.
+
+        Returns:
+            String representation of Dropbox API resource that stores the data
+            for this bin.
+        """
+
         return 'https://api-content.dropbox.com/1/files/sandbox/' + \
                 self.key().name() + '/' + self.filename
 
     def get_raw_content_url(self):
+        """ Implementation of the Bin abstract method.
+
+        Returns:
+            String representation of URL of resource on Dropbox domain that
+            contains the raw data for this Bin.
+        """
+
         return 'https://dl.dropboxusercontent.com/s/' + \
                 self.dropbox_id + '/' + self.filename
 
     def get_html_content_url(self):
+        """ Implementation of the Bin abstract method.
+
+        Returns:
+            String representation of URL of resource on Dropbox domain that
+            contains the HTML page with data for this Bin.
+        """
+
         return 'https://www.dropbox.com/s/' + \
                 self.dropbox_id + '/' + self.filename
 
     def get_info(self):
+        """ Constructs the information about this DropboxBin resource that is
+            sent over the network to clients. First constructs the generic Bin
+            information and the adds DropboxBin specific information.
+
+        Returns:
+            Dictionary of bin properties and tasks.
+        """
+
         bin_info = Bin.get_info(self)
         bin_info['filename'] = self.filename
 
@@ -662,6 +1023,15 @@ class DropboxBin(Bin):
 
     @classmethod
     def get_user_id_for_token(cls, api_token):
+        """ Retrieves the user id for a Dropbox OAuth token.
+
+        Args:
+            api_token: OAuth token for Dropbox API.
+
+        Returns:
+            String representation of Dropbox user id associated with api_token.
+        """
+
         auth_headers = {
             'Authorization': 'Bearer ' + api_token
         }
@@ -680,6 +1050,18 @@ class DropboxBin(Bin):
             return str(json.loads(response.content)['uid'])
 
     def append_data(self, params):
+        """ Appends data to a Dropbox file. Works by fetching existing data,
+            then appending new data locally and writing the results back to the
+            file on Dropbox.
+
+        Args:
+            params: dictionary-like object with key-value data to be appended
+                    to existing data
+
+        Raises:
+            HTTPError if a Dropbox API invocation fails.
+        """
+
         auth_headers = {
             'Authorization': 'Bearer ' + self.api_token
         }
@@ -719,6 +1101,23 @@ class DropboxBin(Bin):
                 result.content)
 
     def initialize(self, bin_name, params):
+        """ Initializes a DropboxBin by:
+            1) creating a folder on Dropbox named by the bin name
+            2) creating a file in the folder with the initial data
+            3) fetching the publicly shareable URL for this file
+            4) resolving the publicly shareable URL to get to the Dropbox id
+               for this file. The publicly shareable URL is shortened, so it
+               has to be resolved in order to get the final URL which contains
+               the id.
+
+        Args:
+            bin_name: name of the Bin to be initialized (not used here)
+            params: dictionary-like object with parameters relevant for
+                    DropboxBin creation
+
+        Raises:
+            HTTPError if a Dropbox API invocation fails.
+        """
         validate_input_param(params, 'api_token', True,
                              validate_non_empty_string,
                              False)
@@ -811,6 +1210,8 @@ class DropboxBin(Bin):
 ################################################################################
 
 class Task(db.Model):
+    """ A task for appending data to a Bin. """
+
     bin = db.ReferenceProperty(Bin)
     status = db.StringProperty()
     status_msg = db.StringProperty(multiline=True)
@@ -819,6 +1220,13 @@ class Task(db.Model):
 
     @classmethod
     def generate_name(cls):
+        """ Generates a unique name for a Task.
+
+        Returns:
+            String representing a unique name for a Task, where unique means
+            with respect to all other Task instances stored in the datastore.
+        """
+
         task_name = None
         while True:
             task_name = \
@@ -832,6 +1240,21 @@ class Task(db.Model):
 
     @classmethod
     def serialize(cls, tasks, bin, content_type):
+        """ Serializes a Task or list of Tasks based on the desired output
+            mime type.
+
+        Args:
+            tasks: a Task instance or list of Tasks
+            bin: the Bin that tasks belong to
+            content_type: mime type to which tasks should be serialized
+
+        Returns:
+            String representation of tasks in content_type format.
+
+        Raises:
+            HTTPNotAcceptable is content_type is not supported by application.
+        """
+
         tasks_info = None
 
         if isinstance(tasks, Task):
@@ -853,12 +1276,25 @@ class Task(db.Model):
             return template.render({'tasks' : tasks_info, 'bin' : bin_info})
 
     def get_url(self):
+        """ Constructs the URL for this Task resource.
+
+        Returns:
+            String representation of full URL of this Task.
+        """
+
         return webapp2.uri_for(ROUTE_NAME_TASK_STATUS,
                                bin_name=self.bin.key().name(),
                                task_name=self.key().name(),
                                _full=True)
 
     def get_info(self):
+        """ Constructs the information about this Task resource that is sent
+            over the network to clients.
+
+        Returns:
+            Dictionary of Task properties.
+        """
+
         return {
           'task_id' : self.key().name(),
           'task_url' : self.get_url(),
@@ -876,16 +1312,18 @@ class Task(db.Model):
 # Handlers
 ################################################################################
 
-################################################################################
-# Handler for bin creation and bin search requests
-################################################################################
-
 class BinHandler(webapp2.RequestHandler):
+    """ Handler for bin creation and bin search requests. """
+
     def options(self):
         setHTTPOptionsResponse(response=self.response,
                                oauth_methods=['GET', 'POST'])
 
     def get(self):
+        """ Returns bins associated with a specific storage backend and user
+            (based on OAuth API token for that backend).
+        """
+
         self.response.headers.add_header('Access-Control-Allow-Origin', '*')
 
         accept_header = get_best_mime_match_or_default(
@@ -913,18 +1351,20 @@ class BinHandler(webapp2.RequestHandler):
         self.response.out.write(Bin.serialize(bins, accept_header))
 
     def post(self):
+        """ Creates a bin based on passed paramters and returns a
+            representation of the created bin.
+        """
+
         self.response.headers.add_header('Access-Control-Allow-Origin', '*')
         self.response.headers.add_header('Access-Control-Expose-Headers',
                                          'Location')
-
-        content_type = self.request.content_type
 
         accept_header = get_best_mime_match_or_default(
             self.request.headers.get('Accept'),
             SUPPORTED_OUTPUT_APPENDR_MIME_TYPES,
             DEFAULT_OUTPUT_APPENDR_MIME_TYPE)
 
-        params = get_request_params(self.request, content_type)
+        params = get_request_params(self.request)
         bin = Bin.create(params)
         bin.put()
 
@@ -936,16 +1376,20 @@ class BinHandler(webapp2.RequestHandler):
             self.response.set_status(201)
             self.response.out.write(Bin.serialize(bin, accept_header))
 
-################################################################################
-# Handler for requests to a specific bin
-################################################################################
-
 class DataHandler(webapp2.RequestHandler):
+    """ Handler for requests to a specific bin. """
+
     def options(self, bin_name):
         setHTTPOptionsResponse(response=self.response,
                                oauth_methods=['GET', 'POST'])
 
     def get(self, bin_name):
+        """ Returns a representation of a specific bin.
+
+        Args:
+            bin_name: name of bin that is being fetched
+        """
+
         self.response.headers.add_header('Access-Control-Allow-Origin', '*')
 
         accept_header = get_best_mime_match_or_default(
@@ -963,6 +1407,13 @@ class DataHandler(webapp2.RequestHandler):
         self.response.out.write(Bin.serialize(bin, accept_header))
 
     def post(self, bin_name):
+        """ Creates an append data task for specific bin. Tasks are enqueued
+            to task queues via a sharding "algorithm".
+
+        Args:
+            bin_name: name of bin to which data should be appended to
+        """
+
         self.response.headers.add_header('Access-Control-Allow-Origin', '*')
 
         accept_header = get_best_mime_match_or_default(
@@ -975,9 +1426,7 @@ class DataHandler(webapp2.RequestHandler):
         if (bin is None):
             raise HTTPNotFound()
 
-        content_type = self.request.content_type
-        params = get_request_params(self.request, content_type)
-
+        params = get_request_params(self.request)
         params['date_created'] = str(datetime.utcnow())
         task_body = json.dumps(params)
         task_headers = {'Content-Type' : MIME_TYPE_JSON}
@@ -1009,12 +1458,17 @@ class DataHandler(webapp2.RequestHandler):
             self.response.set_status(202)
             self.response.out.write(Task.serialize(task, bin, accept_header))
 
-################################################################################
-# Task handler for appending data to a bin
-################################################################################
-
 class AppendHandler(webapp2.RequestHandler):
+    """ Task handler for appending data to a bin. """
+
     def post(self, bin_name):
+        """ Appends data to a specific bin. Appending is retried if it fails
+            until a predefined timeout occurs.
+
+        Args:
+            bin_name: name of bin to which data should be appended to
+        """
+
         task_name = self.request.headers['X-AppEngine-TaskName']
         task = Task.get_by_key_name(task_name)
 
@@ -1027,8 +1481,7 @@ class AppendHandler(webapp2.RequestHandler):
             if (bin is None):
                 return
 
-            params = get_request_params(self.request, self.request.content_type)
-
+            params = get_request_params(self.request)
             params['date_created'] = \
                 dateutil.parser.parse(params['date_created'])
 
@@ -1064,12 +1517,14 @@ class AppendHandler(webapp2.RequestHandler):
 
             task.put()
 
-################################################################################
-# Task handler for cleaning up unused bins
-################################################################################
-
 class BinCleanupHandler(webapp2.RequestHandler):
+    """ Task handler for cleaning up unused bins. """
+
     def get(self):
+        """ Retrieves bins that have not been updated for a specific time
+            and deletes them from the datastore.
+        """
+
         relativedelta = dateutil.relativedelta.relativedelta
         date_last_update = datetime.utcnow()
         date_last_update += relativedelta(hours = -1 * BIN_CLEANUP_MAX_AGE)
@@ -1081,12 +1536,14 @@ class BinCleanupHandler(webapp2.RequestHandler):
         for bin in unused_bins:
             bin.delete()
 
-################################################################################
-# Task handler for cleaning up finished tasks
-################################################################################
-
 class TaskStatusCleanupHandler(webapp2.RequestHandler):
+    """ Task handler for cleaning up finished data append tasks. """
+
     def get(self):
+        """ Retrieves tasks that have not been updated for a specific time
+            and deletes them from the datastore.
+        """
+
         relativedelta = dateutil.relativedelta.relativedelta
         date_last_update = datetime.utcnow()
         date_last_update += relativedelta(hours = -1 * TASK_CLEANUP_MAX_AGE)
@@ -1098,15 +1555,20 @@ class TaskStatusCleanupHandler(webapp2.RequestHandler):
         for task in unchecked_tasks:
             task.delete()
 
-################################################################################
-# Handler for status requests of a specific task
-################################################################################
-
 class TaskStatusHandler(webapp2.RequestHandler):
+    """ Handler for status requests of a specific task. """
+
     def options(self, bin_name):
         setHTTPOptionsResponse(response=self.response)
 
     def get(self, bin_name, task_name):
+        """ Returns a representation of a specific task.
+
+        Args:
+            bin_name: name of bin that is associated with the task being fetched
+            task_name: name of task that is being fetched
+        """
+
         self.response.headers.add_header('Access-Control-Allow-Origin', '*')
 
         accept_header = get_best_mime_match_or_default(
@@ -1135,15 +1597,17 @@ class TaskStatusHandler(webapp2.RequestHandler):
         self.response.set_status(200)
         self.response.out.write(Task.serialize(task, bin, accept_header))
 
-################################################################################
-# Handler for the main page and root API endpoint
-################################################################################
-
 class MainHandler(webapp2.RequestHandler):
+    """ Handler for the main page and root API endpoint. """
+
     def options(self, bin_name):
         setHTTPOptionsResponse(response=self.response)
 
     def get(self):
+        """ Returns the index page for the application or a JSON response
+            with a link to resource for creating bins.
+        """
+
         self.response.headers.add_header('Access-Control-Allow-Origin', '*')
 
         accept_header = get_best_mime_match_or_default(
@@ -1163,18 +1627,22 @@ class MainHandler(webapp2.RequestHandler):
         self.response.set_status(200)
         self.response.out.write(resp_content)
 
-################################################################################
-# Handler for creating OAuth token for GitHub Gist backend
-################################################################################
-
 class OAuthGitHubTokenHandler(webapp2.RequestHandler):
+    """ Handler for creating OAuth token for GitHub Gist backend. """
+
     def get(self):
+        """ Returns an HTML page with the OAuth API token for GitHub. The
+            token is first retrieved by calling GitHub's API with a code
+            that was passed in when the user was redirected to this page
+            as a part of the OAuth flow.
+        """
+
         accept_header = get_best_mime_match_or_default(
                 self.request.headers.get('Accept'),
                 [MIME_TYPE_HTML],
                 MIME_TYPE_HTML)
 
-        params = get_request_params(self.request, self.request.content_type)
+        params = get_request_params(self.request)
         oauth_code = self.request.params.get('code')
 
         params = {
@@ -1212,12 +1680,16 @@ class OAuthGitHubTokenHandler(webapp2.RequestHandler):
         self.response.set_status(200)
         self.response.out.write(resp_content)
 
-################################################################################
-# Handler for creating OAuth token for Dropbox backend
-################################################################################
-
 class OAuthDropboxTokenHandler(webapp2.RequestHandler):
+    """ Handler for creating OAuth token for Dropbox backend. """
+
     def get(self):
+        """ Returns an HTML page with the OAuth API token for Dropbox. The
+            token is first retrieved by calling Dropbox's API with a code
+            that was passed in when the user was redirected to this page
+            as a part of the OAuth flow.
+        """
+
         accept_header = get_best_mime_match_or_default(
                 self.request.headers.get('Accept'),
                 [MIME_TYPE_HTML],
@@ -1309,5 +1781,6 @@ app = webapp2.WSGIApplication([
                   name=ROUTE_NAME_OAUTH_DROPBOX)
 ], debug=DEBUG)
 
+# Register the error handler with specific HTTP error codes
 for error_code in [400, 401, 403,404, 405, 406, 415, 500, 501, 503]:
     app.error_handlers[error_code] = handle_error
