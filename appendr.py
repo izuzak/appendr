@@ -1076,6 +1076,8 @@ class BinCleanupHandler(webapp2.RequestHandler):
         unused_bins = Bin.all().order('-date_updated').filter(
             'date_updated <', date_last_update).fetch(None)
 
+        logging.debug("Cleanup job is deleting %s bins." % len(unused_bins))
+
         for bin in unused_bins:
             bin.delete()
 
@@ -1090,6 +1092,8 @@ class TaskStatusCleanupHandler(webapp2.RequestHandler):
         date_last_update += relativedelta(hours = -1 * TASK_CLEANUP_MAX_AGE)
         unchecked_tasks = Task.all().order('-date_updated').filter(
             'date_updated <', date_last_update).fetch(None)
+
+        logging.debug("Cleanup job is deleting %s tasks." % len(unchecked_tasks))
 
         for task in unchecked_tasks:
             task.delete()
@@ -1170,6 +1174,7 @@ class OAuthGitHubTokenHandler(webapp2.RequestHandler):
                 [MIME_TYPE_HTML],
                 MIME_TYPE_HTML)
 
+        params = get_request_params(self.request, self.request.content_type)
         oauth_code = self.request.params.get('code')
 
         params = {
@@ -1218,6 +1223,7 @@ class OAuthDropboxTokenHandler(webapp2.RequestHandler):
                 [MIME_TYPE_HTML],
                 MIME_TYPE_HTML)
 
+        params = get_request_params(self.request, self.request.content_type)
         oauth_code = self.request.params.get('code')
 
         params = {
@@ -1303,9 +1309,5 @@ app = webapp2.WSGIApplication([
                   name=ROUTE_NAME_OAUTH_DROPBOX)
 ], debug=DEBUG)
 
-app.error_handlers[400] = handle_error
-app.error_handlers[401] = handle_error
-app.error_handlers[404] = handle_error
-app.error_handlers[406] = handle_error
-app.error_handlers[415] = handle_error
-app.error_handlers[500] = handle_error
+for error_code in [400, 401, 403,404, 405, 406, 415, 500, 501, 503]:
+    app.error_handlers[error_code] = handle_error
