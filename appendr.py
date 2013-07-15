@@ -271,7 +271,7 @@ def get_request_params(request):
     """
 
     params = None
-    if request.content_type == MIME_TYPE_FORM:
+    if request.content_type == MIME_TYPE_FORM or request.method == 'GET':
         params = dict(request.params.copy())
     elif request.content_type == MIME_TYPE_JSON:
         params = json.loads(request.body)
