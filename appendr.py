@@ -1698,7 +1698,7 @@ class OAuthDropboxTokenHandler(webapp2.RequestHandler):
                 [MIME_TYPE_HTML],
                 MIME_TYPE_HTML)
 
-        params = get_request_params(self.request, self.request.content_type)
+        params = get_request_params(self.request)
         oauth_code = self.request.params.get('code')
 
         params = {
