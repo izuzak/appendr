@@ -183,14 +183,14 @@
 
 {% block scripts %}
         <script type="text/javascript">
-          setTimeout(function () {
+          $(window).load(function () {
             $('.bs-docs-sidenav').affix({
-              offset: {
-                top: 96,
-                bottom: 0
-              }
-            })
-          }, 100)
+                offset: {
+                  top: 96,
+                  bottom: 0
+                }
+            });
+          });
         </script>
 
         <script type="text/javascript">
