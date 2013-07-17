@@ -1706,7 +1706,7 @@ class OAuthDropboxTokenHandler(webapp2.RequestHandler):
             'grant_type' : 'authorization_code',
             'client_id' : OAUTH_DROPBOX_CLIENT_ID,
             'client_secret' : OAUTH_DROPBOX_CLIENT_SECRET,
-            'redirect_uri' : 'https://appendr.appspot.com/oauth_token_dropbox'
+            'redirect_uri' : self.request.host_url + '/oauth_token_dropbox'
         }
 
         headers = {
