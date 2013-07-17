@@ -2,6 +2,25 @@ body {
     background-color: rgb(216, 233, 215);
 }
 
+table thead,tbody {
+    font-size: 14;
+    line-height: 20px;
+}
+
+
+section p,ul {
+    padding-left: 45px;
+    line-height: 22px;
+    font-size: 17px;
+    font-weight: 300;
+}
+
+.container div,p {
+    line-height: 22px;
+    font-size: 17px;
+    font-weight: 300;
+}
+
 pre {
     overflow-x: auto;
     overflow-wrap: normal;
