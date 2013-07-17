@@ -113,8 +113,8 @@ DEFAULT_FILENAME = 'appendr_data.%s'
 
 # Default message that will be set in the Gist description if the backend
 # is Gist
-DEFAULT_GIST_MESSAGE = ('Gist created automatically by Appendr '
-                        '(appendr.appspot.com). Data filename is: %s')
+DEFAULT_GIST_MESSAGE = ('Gist created automatically by Appendr. '
+                        'Data filename is: %s')
 
 # Secret OAuth app info for external services
 OAUTH_GITHUB_CLIENT_ID = appendr_cfg.github_client_id
@@ -1203,6 +1203,9 @@ class DropboxBin(Bin):
                 'Error while calling Dropbox API - retrieve shared file\n' + \
                 result.content)
 
+        # The line below extracts the ID of the file on dropbox so that
+        # it can be used to construct raw content and html content URLs
+        # as described here: https://www.dropbox.com/help/201/en
         self.dropbox_id = DROPBOX_ID_REGEX.match(result.final_url).group(1)
 
 ################################################################################
