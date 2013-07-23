@@ -8,10 +8,11 @@
             <div class="span3 bs-docs-sidebar">
               <ul class="nav nav-list bs-docs-sidenav">
                 <li><a href="#intro"><i class="icon-chevron-right"></i> &#x2460; Introduction</a></li>
-               <!--  <li><a href="#features"><i class="icon-chevron-right"></i> &#x2461; Features</a></li>
-                <li><a href="#usage"><i class="icon-chevron-right"></i> &#x2462; Usage</a></li> -->
-                <li><a href="#create"><i class="icon-chevron-right"></i> &#x2461; Create a bin</a></li>
-                <li><a href="#search"><i class="icon-chevron-right"></i> &#x2462; Find your bins</a></li>
+                <li><a href="#usage"><i class="icon-chevron-right"></i> &#x2461; Usage instructions</a></li>
+                <li><a href="#example"><i class="icon-chevron-right"></i> &#x2462; Example</a></li>
+                <li><a href="#tokens"><i class="icon-chevron-right"></i> &#x2463; Create OAuth tokens</a></li>
+                <li><a href="#create"><i class="icon-chevron-right"></i> &#x2464; Create a bin</a></li>
+                <li><a href="#search"><i class="icon-chevron-right"></i> &#x2465; Find your bins</a></li>
               </ul>
             </div>
 
@@ -20,61 +21,83 @@
               <section>
                 <h2> &#x2460; Introduction </h2>
                 <p>
-                  Appendr is Web service that simplifies automated collection of key-value data.
+                  Appendr is Web service that <b>simplifies automated collection of key-value data</b>. Appendr itself <b> does not store any data </b> except for a link to an external service which is used for storing your data.
+                  Appendr just <b> wraps the external storage services to provide a simple API </b> for timestamping and appending data, which most external services do not provide.
+                  In other words, Appendr is a <b> key-value pair append-only logging utility that uses external services for storage</b>.
                 </p>
                 <p>
-                  Appendr itself does not store any data except for the link to an external storage service.
-                  It just wraps the external storage services in order to provide a simple API for timestamping and appending data, which most external services do not provide.
-                  In other words, Appendr is a key-value pair append-only logging utility that uses external services for storage.
+                  <b>More information</b> about Appendr and what it is good for is available on the <a href="https://github.com/izuzak/appendr">project's GitHub page</a>.
                 </p>
                 <p>
-                  Features:
+                  Some of the features of Appendr are:
                   <ul>
-                    <li> CORS support - Appendr may be called cross-domain from a JavaScript script in a browser</li>
-                    <li> Support for concurrent appends - Appendr will correctly handle multiple data appends sent to it at the same time. </li>
-                    <li> Supported external storage services - GitHub Gist, Dropbox</li>
-                    <li> Supported input formats - application/json, application/x-www-form-urlencoded</li>
-                    <li> Supported output formats: application/json, text/csv </li>
+                    <li> <b> CORS support </b>- Appendr may be called cross-domain from a JavaScript script in a browser</li>
+                    <li> <b> Support for concurrent appends </b> - Appendr will handle multiple data appends sent to it at the same time</li>
+                    <li> <b> Fault tolerance </b> - Appendr will retry storing data on an external service if the  service is down</li>
+                    <li> <b> Supported external storage services </b> - GitHub Gist, Dropbox</li>
+                    <li> <b> Supported input formats </b> - JSON, URL-encoded params</li>
+                    <li> <b> Supported output formats </b> - JSON, CSV </li>
                   </ul>
                 </p>
-                <p>
-                  More instructions coming soon! See project's <a href="https://github.com/izuzak/appendr">GitHub page</a> for now.
-                </p>
-                <p>
-                  Get a GitHub OAuth API token: <a href="https://github.com/login/oauth/authorize?client_id=06cced72fb2ae0539514&scope=gist"> click me. </a>
-                </p>
-                <p>
-                  Get a Dropbox OAuth API token: <a href="https://www.dropbox.com/1/oauth2/authorize?response_type=code&client_id=8jt4nhv6ipanmph&redirect_uri=https://appendr.appspot.com/oauth_token_dropbox"> click me. </a>
-                </p>
               </section>
-
-              <!-- <section>
-                <h2> &#x2461; Features </h2>
-                <p>
-                  Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod
-                  tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
-                  quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo
-                  consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse
-                  cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non
-                  proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
-                </p>
-              </section>
-
               <section>
-                <h2> &#x2462; Usage </h2>
+                <a name="usage"></a>
+                <h2> &#x2461; Usage instructions </h2>
+
                 <p>
-                  Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod
-                  tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
-                  quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo
-                  consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse
-                  cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non
-                  proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+                  <i> Detailed usage instructions are available on the <a href="https://github.com/izuzak/appendr">project's GitHub page</a>. </i>
                 </p>
-              </section> -->
+
+                <p>
+                  First, <b>create OAuth tokens for external storage services</b> you want to use, using the links below.
+                </p>
+
+                <p>
+                  Second, <b>create an Appendr bin</b> by choosing an external storage service and providing an OAuth token for it. You can create as many bins as you want. Bins can be created either via the form below or via Appendr's API. Creating a bin gives you links to raw and HTML versions of the associated data stored on the external storage service used for that bin.
+                </p>
+
+                <p>
+                  Third, <b>send data to the bin</b> using Appendr's API and the data will be saved on the external service. You can also use a bin's web page to append some dummy data. Appendr will automatically timestamp the data sent to it and append it to the existing data in external storage. Each bin keeps track of the status of data append tasks and exposes these statuses when you query the bin.
+                </p>
+
+                <p>
+                  Fourth, <b>get a list of your bins</b> on a specific external storage service by providing an OAuth token for that service. Again, this can be done either via the form below or via Appendr's API.
+                </p>
+              </section>
+              <section>
+                <a name="example"></a>
+                <h2> &#x2462; Example </h2>
+
+                <p>
+                  <b>See a <a href="https://appendr.appspot.com/bins/7A4nk78R280BnImcMw7V">demo bin</a></b> I have created. This bin uses the GitHub Gist service for storing data, and already has some data appended to it. <b>View the data</b> by following the "Content URL (raw)" or "Content URL (html):" links.
+                </p>
+                <p>
+                  <b>Try appending some dummy data</b> yourself by clicking the "Append fake data" buttom at the bottom of the screen. Notice that <b>each time a task is created</b> and you can track the status of the append task. The task of appending data has completed successfully if its status is "completed".
+                </p>
+                <p>
+                  <b>View the data on the external service again</b> to verify that new data has been appended.
+                </p>
+              </section>
+              <section>
+                <a name="tokens"></a>
+                <h2> &#x2463; Create OAuth tokens </h2>
+
+                <p>
+                  Use the following links to create OAuth tokens for external storage services. Write down the tokens and use them when creating and searching for your bins stored on a specific storage service. If you forget your tokens - just use the links again to create new ones (you can create as many as you want, they're free).
+                </p>
+
+                <p>
+                  <ul>
+                    <li> <strong> GitHub </strong> - Create a GitHub OAuth API token: <a href="https://github.com/login/oauth/authorize?client_id=06cced72fb2ae0539514&scope=gist"> click here. </a> </li>
+                    <li> <strong> Dropbox </strong> - Create a Dropbox OAuth API token: <a href="https://www.dropbox.com/1/oauth2/authorize?response_type=code&client_id=8jt4nhv6ipanmph&redirect_uri=https://appendr.appspot.com/oauth_token_dropbox"> click here. </a> </li>
+                  </ul>
+                </p>
+
+              </section>
 
               <section>
                 <a name="create"></a>
-                <h2> &#x2461; Create a bin </h2>
+                <h2> &#x2464; Create a bin </h2>
 
                 <form id="someform" class="form-horizontal" method="post" action="/bins">
                   <div class="control-group">
@@ -136,7 +159,7 @@
 
               <section>
                 <a name="search"></a>
-                <h2> &#x2462; Find your bins </h2>
+                <h2> &#x2465; Find your bins </h2>
 
                 <form id="someform" class="form-horizontal" method="get" action="/bins">
                   <div class="control-group">

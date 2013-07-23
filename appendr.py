@@ -483,7 +483,7 @@ def serialize_error(mime_type, error_info):
         return template.render(error_info)
 
     elif mime_type in [MIME_TYPE_JSON, MIME_TYPE_TEXT]:
-        return json.dumps(error_info)
+        return json.dumps(error_info, indent=JSON_INDENT)
 
     else:
         # should never happen because it is detected earlier
