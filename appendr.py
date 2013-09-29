@@ -24,6 +24,7 @@ import urllib
 import appendr_cfg
 import re
 import traceback
+import base64
 
 ################################################################################
 # Config parameters and constants
@@ -65,7 +66,7 @@ TEMPLATE_OAUTH_TOKEN = 'oauth_token.html'
 TEMPLATE_ERROR = 'error.html'
 
 # CSV and JSON serialization params
-CSV_DELIMITER = ';'
+CSV_DELIMITER = ','
 CSV_QUOTECHAR = '"'
 JSON_INDENT = 2
 
@@ -78,11 +79,13 @@ BIN_NAME_LENGTH = 20
 TASK_NAME_LENGTH = 20
 
 # Storage backends
-STORAGE_BACKEND_GIST = 'gist'
+STORAGE_BACKEND_GIST = 'github-gist'
+STORAGE_BACKEND_GITHUB_REPO = 'github-repo'
 STORAGE_BACKEND_DROPBOX = 'dropbox'
 SUPPORTED_STORAGE_BACKENDS = {
     STORAGE_BACKEND_GIST : 0,
-    STORAGE_BACKEND_DROPBOX : 1
+    STORAGE_BACKEND_DROPBOX : 1,
+    STORAGE_BACKEND_GITHUB_REPO : 2
 }
 DEFAULT_STORAGE_BACKEND = STORAGE_BACKEND_GIST
 
@@ -159,6 +162,9 @@ ERROR_MSG_DEFINED = 'Parameter %s must be defined.'
 ERROR_MSG_NOT_ACCEPTABLE = ('The application can not return response in the '
                            'requested mime type. Accept header was: %s. '
                            'Acceptable mime types are: %s.')
+ERROR_MSG_NON_REPO_STRING_PARAM = ('Invalid value for parameter %s: %s. '
+                                   'Parameter must be a non-empty string with '
+                                   'format owner/repo.')
 
 ################################################################################
 # Helper functions
@@ -190,6 +196,28 @@ def get_best_mime_match_or_default(accept_header, allowed_types, default=None):
                   (accept_header, allowed_types))
         else:
             return match
+
+def validate_github_repo_string(param_name, param_value):
+    """ Validate that the value of a parameter is of owner/repo format.
+
+    Args:
+        param_name: name of parameter
+        param_value: value of parameter
+
+    Returns:
+        True if param_value is a string with the format owner/repo.
+
+    Raises:
+        HTTPClientError if param_value is not a string of owner/repo format.
+    """
+
+    if not (isinstance(param_value, basestring)):
+        raise HTTPClientError(ERROR_MSG_NON_REPO_STRING_PARAM % (param_name, param_value))
+
+    vals = param_value.split('/')
+
+    if len(vals) != 2 or len(vals[0]) == 0 or len(vals[1]) == 0:
+        raise HTTPClientError(ERROR_MSG_NON_REPO_STRING_PARAM % (param_name, param_value))
 
 def validate_non_empty_string(param_name, param_value):
     """ Validates that the value of a parameter is not an empty string.
@@ -689,6 +717,8 @@ class Bin(polymodel.PolyModel):
 
         if storage_backend == STORAGE_BACKEND_GIST:
             return GistBin.get_user_id_for_token(api_token)
+        elif storage_backend == STORAGE_BACKEND_GITHUB_REPO:
+            return GitHubRepoBin.get_user_id_for_token(api_token)
         elif storage_backend == STORAGE_BACKEND_DROPBOX:
             return DropboxBin.get_user_id_for_token(api_token)
         else:
@@ -730,6 +760,8 @@ class Bin(polymodel.PolyModel):
 
         if params['storage_backend'] == STORAGE_BACKEND_GIST:
             bin = GistBin(key_name=bin_name)
+        elif params['storage_backend'] == STORAGE_BACKEND_GITHUB_REPO:
+            bin = GitHubRepoBin(key_name=bin_name)
         elif params['storage_backend'] == STORAGE_BACKEND_DROPBOX:
             bin = DropboxBin(key_name=bin_name)
         else:
@@ -858,7 +890,7 @@ class GistBin(Bin):
         if gist_response.status_code != 200:
             raise status_map[gist_response.status_code](\
                 'Error while calling GitHub API - fetch gist data\n' + \
-                response.content)
+                gist_response.content)
 
         json_gist = json.loads(gist_response.content)
 
@@ -889,7 +921,7 @@ class GistBin(Bin):
         if result.status_code != 200:
             raise status_map[result.status_code](\
                 'Error while calling GitHub API - update gist data\n' + \
-                response.content)
+                result.content)
 
     def initialize(self, bin_name, params):
         """ Initializes a GistBin by creating a GitHub gist and writing
@@ -961,6 +993,209 @@ class GistBin(Bin):
         self.api_token = params['api_token']
         self.filename = params['filename']
         self.storage_user_id = str(json_content['user']['id'])
+
+################################################################################
+# GitHubRepoBin model
+################################################################################
+
+class GitHubRepoBin(Bin):
+    """ A Bin implementation that uses GitHub repositories for storing data. """
+
+    repo = db.StringProperty()
+    api_token = db.StringProperty()
+    filename = db.StringProperty()
+
+    def get_repo_api_url(self):
+        """ Constructs the URL for fetching the representation of the
+            repo that stores the data for this bin, via the GitHub API.
+
+        Returns:
+            String representation of GitHub API resource that stores the data
+            for this bin.
+        """
+
+        return 'https://api.github.com/repos/' + self.repo + '/contents/' + \
+               self.filename
+
+    def get_raw_content_url(self):
+        """ Implementation of the Bin abstract method.
+
+        Returns:
+            String representation of URL of resource on GitHub domain that
+            contains the raw data for this Bin.
+        """
+
+        return 'https://raw.github.com/' + self.repo + '/master/' + \
+               self.filename
+
+    def get_html_content_url(self):
+        """ Implementation of the Bin abstract method.
+
+        Returns:
+            String representation of URL of resource on GitHub domain that
+            contains the HTML page with data for this Bin.
+        """
+
+        return 'https://github.com/' + self.repo + '/blob/master/' + \
+               self.filename
+
+    def get_info(self):
+        """ Constructs the information about this GitHubRepoBin resource that
+            is sent over the network to clients. First constructs the generic
+            Bin information and the adds GitHubRepoBin specific information.
+
+        Returns:
+            Dictionary of bin properties and tasks.
+        """
+
+        bin_info = Bin.get_info(self)
+
+        bin_info['repo'] = self.repo
+        bin_info['filename'] = self.filename
+        bin_info['repo_api_url'] = self.get_repo_api_url()
+
+        return bin_info
+
+    @classmethod
+    def get_user_id_for_token(cls, api_token):
+        """ Retrieves the user id for a GitHub OAuth token.
+
+        Args:
+            api_token: OAuth token for GitHub API.
+
+        Returns:
+            String representation of GitHub user id associated with api_token.
+        """
+
+        auth_headers = {
+            'Authorization': 'token ' + api_token
+        }
+
+        response = urlfetch.fetch(
+                            url='https://api.github.com/user',
+                            headers=auth_headers,
+                            deadline=URLFETCH_DEADLINE,
+                            validate_certificate=URLFETCH_VALIDATE_CERTS)
+
+        if response.status_code != 200:
+            raise status_map[response.status_code](\
+                'Error while calling GitHub API - fetch user information\n' + \
+                response.content)
+        else:
+            return str(json.loads(response.content)['id'])
+
+    def append_data(self, params):
+        """ Appends data to a GitHub repo. Works by fetching existing data, then
+            appending new data locally and writing the results back to the
+            GitHub repo.
+
+        Args:
+            params: dictionary-like object with key-value data to be appended
+                    to existing data
+
+        Raises:
+            HTTPError if GitHub API invocation failed.
+        """
+
+        auth_headers = {
+            'Authorization': 'token ' + self.api_token
+        }
+
+        repo_response = urlfetch.fetch(
+                            url=self.get_repo_api_url(),
+                            headers=auth_headers,
+                            deadline=URLFETCH_DEADLINE,
+                            validate_certificate=URLFETCH_VALIDATE_CERTS)
+
+        if repo_response.status_code != 200:
+            raise status_map[repo_response.status_code](\
+                'Error while calling GitHub API - fetch repo data\n' + \
+                repo_response.content)
+
+        json_file = json.loads(repo_response.content)
+        old_content = base64.b64decode(json_file['content'])
+        new_content = append_data(old_content, self.output_format, params)
+
+        new_payload = json.dumps({
+            'message' : 'appendr update',
+            'content' : base64.b64encode(new_content),
+            'sha' : json_file['sha']
+        })
+
+        repo_headers = {
+            'Content-Type': MIME_TYPE_JSON,
+            'Authorization': 'token ' + self.api_token
+        }
+
+        result = urlfetch.fetch(url=self.get_repo_api_url(),
+                                payload=new_payload,
+                                method=urlfetch.PUT,
+                                headers=repo_headers,
+                                deadline=URLFETCH_DEADLINE,
+                                validate_certificate=URLFETCH_VALIDATE_CERTS)
+
+        if result.status_code != 200:
+            raise status_map[result.status_code](\
+                'Error while calling GitHub API - update repo data\n' + \
+                result.content)
+
+    def initialize(self, bin_name, params):
+        """ Initializes a GitHubRepoBin by creating a GitHub file and writing
+            initial data since files in a repos can't be empty.
+
+        Args:
+            bin_name: name of the Bin to be initialized (not used here)
+            params: dictionary-like object with parameters relevant for
+                    GitHubRepoBin creation
+
+        Raises:
+            HTTPError if GitHub API invocations failed.
+        """
+
+        validate_input_param(params, 'api_token', True,
+                             validate_non_empty_string,
+                             False)
+
+        validate_input_param(params, 'repo', True,
+                             validate_github_repo_string,
+                             False)
+
+        validate_input_param(params, 'filename', False,
+                             validate_non_empty_string,
+                             DEFAULT_FILENAME % \
+                                 (params['output_format'].split('/')[-1],))
+
+        self.api_token = params['api_token']
+        self.filename = params['filename']
+        self.repo = params['repo']
+        self.storage_user_id = \
+            str(GitHubRepoBin.get_user_id_for_token(self.api_token))
+
+        repo_headers = {
+            'Content-Type': MIME_TYPE_JSON,
+            'Authorization': 'token ' + params['api_token']
+        }
+
+        empty_data_string = OUTPUT_FORMATS_EMPTY_DATA[params['output_format']]
+
+        repo_payload = json.dumps({
+            'message' : 'appendr create',
+            'content' : base64.b64encode(empty_data_string)
+        })
+
+        result = urlfetch.fetch(url=self.get_repo_api_url(),
+                                payload=repo_payload,
+                                method=urlfetch.PUT,
+                                headers=repo_headers,
+                                deadline=URLFETCH_DEADLINE,
+                                validate_certificate=URLFETCH_VALIDATE_CERTS)
+
+        if result.status_code != 201:
+            raise status_map[result.status_code](\
+                'Error while calling GitHub API - create repo file\n' + \
+                result.content)
+
+        json_content = json.loads(result.content)
 
 ################################################################################
 # DropboxBin model
@@ -1631,7 +1866,7 @@ class MainHandler(webapp2.RequestHandler):
         self.response.out.write(resp_content)
 
 class OAuthGitHubTokenHandler(webapp2.RequestHandler):
-    """ Handler for creating OAuth token for GitHub Gist backend. """
+    """ Handler for creating OAuth token for GitHub repo and Gist backend. """
 
     def get(self):
         """ Returns an HTML page with the OAuth API token for GitHub. The
@@ -1674,9 +1909,26 @@ class OAuthGitHubTokenHandler(webapp2.RequestHandler):
                 'Error while creating GitHub OAuth token. \n' + result.content)
 
         access_token = json.loads(result.content)['access_token']
+
+        headers = {
+            'Authorization' : 'token ' + access_token
+        }
+
+        result = urlfetch.fetch(
+                    url='https://api.github.com/user',
+                    headers=headers,
+                    deadline=URLFETCH_DEADLINE,
+                    validate_certificate=URLFETCH_VALIDATE_CERTS)
+
+        if result.status_code != 200:
+            raise status_map[result.status_code](\
+                'Error while creating GitHub OAuth token. \n' + result.content)
+
+        scope = result.headers['X-OAuth-Scopes']
+
         template = JINJA_ENVIRONMENT.get_template(TEMPLATE_OAUTH_TOKEN)
         resp_content = template.render({
-            'service' : 'GitHub Gist',
+            'service' : 'GitHub ' + scope,
             'token' : access_token})
 
         self.response.headers['Content-Type'] = 'text/html'
@@ -1785,5 +2037,5 @@ app = webapp2.WSGIApplication([
 ], debug=DEBUG)
 
 # Register the error handler with specific HTTP error codes
-for error_code in [400, 401, 403,404, 405, 406, 415, 500, 501, 503]:
+for error_code in [400, 401, 403,404, 405, 406, 415, 422, 500, 501, 503]:
     app.error_handlers[error_code] = handle_error

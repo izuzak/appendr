@@ -51,7 +51,7 @@ Appendr
 
 * **can be invoked cross-domain from a JavaScript script running in the browser** since the API supports the [CORS](http://en.wikipedia.org/wiki/Cross-origin_resource_sharing) specification.
 
-* **works with different external storage services**, and currently [GitHub Gist](https://gist.github.com/) and [Dropbox](https://www.dropbox.com/) are supported.
+* **works with different external storage services**, and currently [GitHub Gist](https://gist.github.com/), [GitHub repositories](https://github.com) and [Dropbox](https://www.dropbox.com/) are supported.
 
 * **accepts key-value data in multiple formats**, and currently JSON (`application/json`) and URL-encoded data (`application/x-www-form-urlencoded`).
 
@@ -73,7 +73,7 @@ Other than creating OAuth tokens, Appendr was developed to be used through its A
 
 ## Example
 
-**See a [demo bin](https://appendr.appspot.com/bins/7A4nk78R280BnImcMw7V)** I have created. This bin uses the GitHub Gist service for storing data, and already has some data appended to it. **View the data** by following the "Content URL (raw)" or "Content URL (html)" links.
+**See a [demo bin](https://appendr.appspot.com/bins/V3t1fwpDYR4x2z1aY9Yk)** I have created. This bin uses the GitHub Gist service for storing data, and already has some data appended to it. **View the data** by following the "Content URL (raw)" or "Content URL (html)" links.
 
 **Try appending some dummy data** yourself by clicking the "Append fake data" button at the bottom of the screen. Notice that **each time a task is created** and you can track the status of the append task. The task of appending data has completed successfully if its status is "completed".
 
@@ -83,13 +83,13 @@ Other than creating OAuth tokens, Appendr was developed to be used through its A
 
 Appendr uses a simplified approach to security, which has it's upsides and downsides.
 
-Creating a bin gives you a hard-to-guess bin URL such as this one: `https://appendr.appspot.com/bins/7A4nk78R280BnImcMw7V`. **Bin URLs provide [security through obscurity](http://en.wikipedia.org/wiki/Security_through_obscurity)** - the URLs are initially known only to you, but you can share them with other people if you want.
+Creating a bin gives you a hard-to-guess bin URL such as this one: `https://appendr.appspot.com/bins/V3t1fwpDYR4x2z1aY9Yk`. **Bin URLs provide [security through obscurity](http://en.wikipedia.org/wiki/Security_through_obscurity)** - the URLs are initially known only to you, but you can share them with other people if you want.
 
 **Why would you want to share bin URLs with other people?** Because the URL is linked to your OAuth token which grants permissions of writing data to a file on the external service used for storage. Therefore, knowing the URL means having permissions to append data to that bin, and if you want to enable other people to append data to a specific bin - just give them the URL. This makes collaboration very easy.
 
 **What other kinds of permissions are you giving to other people when you give them a bin URL?** None. They are only able to write data (in an append-only fashion) to that single bin for which you gave them the URL. They can not modify or delete existing data, nor can they create new bins in your name, nor make any other calls to the external storage service in your name.
 
-If you only want to **give other people read-only access** to the data stored on the external service - you can give them the URLs for the raw or html content which are available for each bin. For example, this is the URL that enables other people to read the raw data associated with the above bin (Gist-backed bin): `https://gist.github.com/izuzak/09a089eb95641c99a17c/raw/data.json`.
+If you only want to **give other people read-only access** to the data stored on the external service - you can give them the URLs for the raw or html content which are available for each bin. For example, this is the URL that enables other people to read the raw data associated with the above bin (Gist-backed bin): `https://gist.github.com/raw/2b438fa6aae6fc6fd4e3/data.json`.
 
 **What if someone guesses one of your bin URLs and starts appending garbage to it?** Just create another bin and copy your clean data there. Bins are cheap to create. Also, if this starts happening - let me know so that I can increase the length of bin URLs which will make them more unguessable.
 
@@ -149,8 +149,8 @@ Example error response:
 Parameters:
 
 * `storage_backend` (optional) - The external service that will be used for data storage.
-Possible values: `gist` (GitHub Gist), `dropbox` (Dropbox).
-Default value: `gist`.
+Possible values: `github-gist` (GitHub Gist), `github-repo` (GitHub repository) `dropbox` (Dropbox).
+Default value: `github-gist`.
 * `output_format` (optional) - The format in which key-value pairs will be stored in a file of the external storage service.
 Possible values: `application/json`, `text/csv`.
 Default value: `application/json`.
@@ -158,9 +158,11 @@ Default value: `application/json`.
 * `filename` (optional) - The name of the file (or file-like object) that will created in external storage and contain the data.
 Default value: `data.extension`, where the `extension` is determined based on the `output_format`.
 E.g. if the output format is `text/csv`, then the default filename will be `data.csv`.
-* `is_public` (optional, `gist` storage only) - Defines if the Gist will be created as a public Gist or private Gist.
+* `is_public` (optional, `github-gist` storage only) - Defines if the Gist will be created as a public Gist or private Gist.
 Possible values: `true`, `false`.
 Default value: `false`.
+* `repo` (mandatory, `github-repo` storage only) - Defines the name of the repository that will be used for storing data.
+The repository must be defined as `owner/repo` and it must already be created, it won't be created if it doesn't exist.
 
 The response will contain a `Location` header with the Appendr URL of the bin to which data should be sent, and a representation of that bin:
 
@@ -179,7 +181,7 @@ Example request:
     Accept: application/json
 
     {
-      "storage_backend" : "gist",
+      "storage_backend" : "github-gist",
       "output_format" : "json",
       "is_public" : false,
       "api_token" : "1234567890abcdefg",
@@ -195,7 +197,7 @@ Example response (after creating a Gist with a file named `data.json`):
     {
       "bin_id": "123abc456def789ghi00",
       "bin_url": "https://appendr.appspot.com/bins/123abc456def789ghi00",
-      "storage_backend": "gist",
+      "storage_backend": "github-gist",
       "output_format": "application/json",
       "filename": "data.json",
       "is_public": false,
@@ -225,14 +227,16 @@ The response will contain a JSON object with the following properties:
 * `storage_backend` - Storage service that this bin uses.
 * `output_format` - MIME type of serialization format used for writing data to external storage service.
 * `filename` - Name of file that stores the data on the external storage service.
-* `is_public` - (`gist` storage only) Whether or not the gist storing the data was created as a public gist.
+* `is_public` - (`github-gist` storage only) Whether or not the gist storing the data was created as a public gist.
 * `date_created` - Date and time of bin creation.
 * `date_updated` - Date and time of last successful data append task, or date and time of bin creation if no data has been appended yet.
 * `datetime_format` - Format used for `date_updated` and `date_created`.
 * `content_raw_url` - Link to the raw, content-only version of the data associated with this bin on the external storage service.
 * `content_html_url` - Link to a human-friendly web page version of the data associated with this bin on the external storage service.
-* `gist_id` - (`gist` storage only) The GitHub id for the gist that stores the data for this bin.
-* `gist_api_url` - (`gist` storage only) Link to the [GitHub API resource that describes the gist that stores the data](http://developer.github.com/v3/gists/#get-a-single-gist).
+* `gist_id` - (`github-gist` storage only) The GitHub id for the gist that stores the data for this bin.
+* `repo` - (`github-repo` storage only) The GitHub repository `owner/repo` name that stores the data for this bin.
+* `gist_api_url` - (`github-gist` storage only) Link to the [GitHub API resource that describes the gist that stores the data](http://developer.github.com/v3/gists/#get-a-single-gist).
+* `repo_api_url` - (`github-repo` storage only) Link to the [GitHub API resource that describes the repository file that stores the data](http://developer.github.com/v3/repos/contents/#get-contents).
 * `tasks_url` - Link to the resource that lists recent task objects. See [Get tasks](#get-tasks).
 * `tasks` - An array of recent task objects for this bin. See [Get a task](#get-a-task) for an explanation of the properties of task objects.
 
@@ -249,7 +253,7 @@ Example response:
     {
       "bin_id": "123abc456def789ghi00",
       "bin_url": "https://appendr.appspot.com/bins/123abc456def789ghi00",
-      "storage_backend": "gist",
+      "storage_backend": "github-gist",
       "output_format": "application/json",
       "filename": "data.json",
       "is_public": false,
@@ -393,7 +397,7 @@ Example response:
 Parameters:
 
 * `storage_backend` (mandatory) - The external service for which you want to find your bins.
-Possible values: `gist` (GitHub Gist), `dropbox` (Dropbox).
+Possible values: `github-gist` (GitHub Gist), `github-repo` (GitHub repository), `dropbox` (Dropbox).
 * `api_token` (mandatory) - The API token that will be used for accessing the external storage service. This doesn't have to be exactly the same token that was used for creating the bins, it just has to be a valid token for your account on the external service.
 
 The response will contain an array of bin objects that match the criteria.
@@ -412,7 +416,7 @@ Example response:
       {
         "bin_id": "123abc456def789ghi00",
         "bin_url": "https://appendr.appspot.com/bins/123abc456def789ghi00",
-        "storage_backend": "gist",
+        "storage_backend": "github-gist",
         "output_format": "application/json",
         "filename": "data.json",
         "is_public": false,

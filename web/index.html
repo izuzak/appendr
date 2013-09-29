@@ -34,7 +34,7 @@
                     <li> <b> CORS support </b>- Appendr may be called cross-domain from a JavaScript script in a browser</li>
                     <li> <b> Support for concurrent appends </b> - Appendr will handle multiple data appends sent to it at the same time</li>
                     <li> <b> Fault tolerance </b> - Appendr will retry storing data on an external service if the  service is down</li>
-                    <li> <b> Supported external storage services </b> - GitHub Gist, Dropbox</li>
+                    <li> <b> Supported external storage services </b> - GitHub Gist, GitHub repository, Dropbox</li>
                     <li> <b> Supported input formats </b> - JSON, URL-encoded params</li>
                     <li> <b> Supported output formats </b> - JSON, CSV </li>
                   </ul>
@@ -69,7 +69,7 @@
                 <h2> &#x2462; Example </h2>
 
                 <p>
-                  <b>See a <a href="https://appendr.appspot.com/bins/7A4nk78R280BnImcMw7V">demo bin</a></b> I have created. This bin uses the GitHub Gist service for storing data, and already has some data appended to it. <b>View the data</b> by following the "Content URL (raw)" or "Content URL (html):" links.
+                  <b>See a <a href="https://appendr.appspot.com/bins/V3t1fwpDYR4x2z1aY9Yk">demo bin</a></b> I have created. This bin uses the GitHub Gist service for storing data, and already has some data appended to it. <b>View the data</b> by following the "Content URL (raw)" or "Content URL (html):" links.
                 </p>
                 <p>
                   <b>Try appending some dummy data</b> yourself by clicking the "Append fake data" button at the bottom of the screen. Notice that <b>each time a task is created</b> and you can track the status of the append task. The task of appending data has completed successfully if its status is "completed".
@@ -88,7 +88,8 @@
 
                 <p>
                   <ul>
-                    <li> <strong> GitHub </strong> - Create a GitHub OAuth API token: <a href="https://github.com/login/oauth/authorize?client_id=06cced72fb2ae0539514&scope=gist"> click here. </a> </li>
+                    <li> <strong> GitHub Gist </strong> - Create a GitHub Gist OAuth API token: <a href="https://github.com/login/oauth/authorize?client_id=06cced72fb2ae0539514&scope=gist"> click here. </a> </li>
+                    <li> <strong> GitHub repository </strong> - Create a GitHub repo OAuth API token: <a href="https://github.com/login/oauth/authorize?client_id=06cced72fb2ae0539514&scope=repo"> click here. </a> </li>
                     <li> <strong> Dropbox </strong> - Create a Dropbox OAuth API token: <a href="https://www.dropbox.com/1/oauth2/authorize?response_type=code&client_id=8jt4nhv6ipanmph&redirect_uri=https://appendr.appspot.com/oauth_token_dropbox"> click here. </a> </li>
                   </ul>
                 </p>
@@ -104,7 +105,8 @@
                     <label class="control-label" for="create-backend-storage">External storage</label>
                     <div class="controls">
                       <select name="storage_backend" id="create-backend-storage">
-                        <option value="gist">GitHub Gist</option>
+                        <option value="github-gist">GitHub Gist</option>
+                        <option value="github-repo">GitHub repository</option>
                         <option value="dropbox">Dropbox</option>
                       </select>
                       <!-- <span class="help-inline">Inline help text</span> -->
@@ -141,6 +143,14 @@
                   </div>
 
                   <div class="control-group">
+                    <label class="control-label" for="create-repo">Repository (repo only)</label>
+                    <div class="controls">
+                      <input name="repo" type="text" id="create-repo" placeholder="owner/repo">
+                      <!-- <span class="help-inline">Inline help text</span> -->
+                    </div>
+                  </div>
+
+                  <div class="control-group">
                     <label class="control-label" for="create-token">OAuth API token</label>
                     <div class="controls">
                       <input name="api_token" type="text" id="create-token">
@@ -166,7 +176,8 @@
                     <label class="control-label" for="create-backend-storage">External storage</label>
                     <div class="controls">
                       <select name="storage_backend" id="create-backend-storage">
-                        <option value="gist">GitHub Gist</option>
+                        <option value="github-gist">GitHub Gist</option>
+                        <option value="github-repo">GitHub repository</option>
                         <option value="dropbox">Dropbox</option>
                       </select>
                       <!-- <span class="help-inline">Inline help text</span> -->

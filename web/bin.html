@@ -62,6 +62,24 @@
 
     {% endif %}
 
+    {% if bins.repo is defined %}
+
+    <div class="row">
+      <div class="span2"><b>GitHub repository</b>:</div>
+      <div> <a target="_blank" href="https://github.com/{{bins.repo}}">{{ bins.repo }}</a> </div>
+    </div>
+
+    {% endif %}
+
+    {% if bins.repo_api_url is defined %}
+
+    <div class="row">
+      <div class="span2"><b>Repo file API URL</b>:</div>
+      <div> <a target="_blank" href="{{ bins.repo_api_url }}">{{ bins.repo_api_url }}</a> </div>
+    </div>
+
+    {% endif %}
+
     <div class="row">
       <div class="span2"><b>Content URL (raw)</b>:</div>
       <div> <a target="_blank" href="{{ bins.content_raw_url }}">{{ bins.content_raw_url }}</a> </div>
